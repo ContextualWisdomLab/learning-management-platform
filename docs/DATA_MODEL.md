@@ -1,6 +1,6 @@
 # Data model baseline
 
-The authoritative database uses third normal form and two-or-more-word `snake_case` object names.
+The authoritative database uses third normal form and two-or-more-word `snake_case` object names. Tenant-scoped relations carry `tenant_id`, and cross-tenant foreign-key relationships fail closed.
 
 Initial entities:
 
@@ -20,7 +20,34 @@ Initial entities:
 - `learning_registration`
 - `learning_attempt`
 - `completion_policy`
+- `completion_policy_revision`
+- `decision_evidence_reference`
 - `completion_decision`
 - `credential_record`
 
-A learner is not assumed to be an employee, login account, payer, or contracting organization. Employment linkage is optional and effective-dated. Completion decisions reference the exact policy revision and evidence snapshots used at decision time.
+A learner is not assumed to be an employee, login account, payer, or contracting organization. Optional employment linkage is represented as an effective-dated `learning_affiliation` or external worker reference with `valid_from` and `valid_to`; no employee row is synthesized for a non-employee learner.
+
+## Completion policy and decision relationships
+
+`completion_policy` owns the stable policy identity. `completion_policy_revision` owns immutable revision content and has a many-to-one relationship to `completion_policy`. The pair `(tenant_id, completion_policy_id, revision_number)` is unique, and an accepted revision is never updated in place.
+
+`decision_evidence_reference` stores only the external source authority, opaque snapshot/reference ID, immutable digest, observed source version, and decision-time metadata. It does **not** duplicate LRS statements, Psychometrics Commons result payloads, Studio content, or Billing provider truth.
+
+`completion_decision` has exactly one `completion_policy_revision` and one or more `decision_evidence_reference` rows through tenant-scoped foreign keys. A decision is immutable after publication; correction creates a superseding decision with an explicit relation to the prior decision.
+
+Cardinality baseline:
+
+```text
+completion_policy 1 ---- * completion_policy_revision
+completion_policy_revision 1 ---- * completion_decision
+completion_decision 1 ---- * decision_evidence_reference
+learner_profile 1 ---- * enrollment_record
+enrollment_record 1 ---- * learning_registration
+course_offering 1 ---- * enrollment_record
+```
+
+## External entitlement projection
+
+`access_entitlement` is a versioned local reference/projection of an entitlement owned by the Billing Control Plane or another authorized entitlement authority. It stores the external entitlement reference, source authority, effective interval, observed version/digest, and projection status. It does not store provider payment objects or become the authoritative commercial permission record.
+
+All authoritative facts are normalized to 3NF; repeated names, provider payloads, and external-system facts are referenced through dedicated identifiers rather than embedded denormalized copies.
