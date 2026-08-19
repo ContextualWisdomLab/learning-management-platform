@@ -6,13 +6,19 @@ It does not own authentication credentials, authored source content, xAPI statem
 
 ## Integration boundaries
 
-- Keyverse: identity, OIDC, federation, and optional SCIM linkage.
-- Orgmetra: optional employment and organizational linkage; non-employees remain first-class learners.
-- Learning Content Studio: immutable content releases.
-- Learning Record Store: observed learning activity.
-- Psychometrics Commons: assessment sessions and immutable result snapshots.
-- Semantic Data Portal: competency and learning-outcome concepts.
-- Billing Control Plane: entitlement and commercial authorization.
+Direct cross-repository database reads are prohibited. Every integration uses a released, versioned API or event contract; until that contract exists, the integration is considered planned rather than implemented.
+
+| Authority | Ownership boundary | Planned versioned contract identifier |
+|---|---|---|
+| Keyverse | Identity, OIDC, federation, optional SCIM linkage | `keyverse_identity_reference/v1` via versioned identity API |
+| Orgmetra | Optional employment and organizational linkage; non-employees remain first-class learners | `orgmetra_worker_reference/v1` via versioned HR reference API/event |
+| Learning Content Studio | Immutable content releases | `learning_content_release/v1` event/API contract |
+| Learning Record Store | Observed learning activity and immutable evidence references | `learning_evidence_reference/v1` API plus xAPI-version-aware integration |
+| Psychometrics Commons | Assessment sessions and immutable result snapshots | `assessment_result_reference/v1` event/API contract |
+| Semantic Data Portal | Competency and learning-outcome concepts | `competency_reference/v1` API contract |
+| Billing Control Plane | Commercial entitlement and authorization | `learning_entitlement_reference/v1` API/event contract |
+
+These identifiers name CWL-owned boundary contracts; they are not conformance claims. Each becomes implemented only when a released schema/client and provider-consumer contract test exist.
 
 ## First vertical
 
