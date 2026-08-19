@@ -5,6 +5,6 @@
 ### Added
 
 - Initial LMS authority and integration boundaries.
-- Non-employee-first learner and enrollment data-model baseline.
+- First-class learner and enrollment data-model baseline covering both employee-linked and non-employee journeys.
 - Standards adoption and operating-profile traceability.
 - Repository development rules.
