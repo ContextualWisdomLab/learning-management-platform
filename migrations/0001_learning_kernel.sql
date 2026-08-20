@@ -8,8 +8,17 @@ CREATE TABLE learning_tenant (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE login_identity_reference (
+    login_identity_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    identity_authority text NOT NULL,
+    external_subject_reference text NOT NULL,
+    CONSTRAINT login_identity_reference_authority_subject_unique
+        UNIQUE (identity_authority, external_subject_reference)
+);
+
 CREATE TABLE learner_profile (
     learner_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    login_identity_id uuid NOT NULL UNIQUE REFERENCES login_identity_reference (login_identity_id),
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -17,7 +26,6 @@ CREATE TABLE tenant_membership (
     tenant_membership_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL REFERENCES learning_tenant (tenant_id),
     learner_id uuid NOT NULL REFERENCES learner_profile (learner_id),
-    external_subject_reference text NOT NULL,
     membership_status text NOT NULL CHECK (membership_status IN ('active', 'suspended', 'ended')),
     valid_from timestamptz NOT NULL,
     valid_to timestamptz,

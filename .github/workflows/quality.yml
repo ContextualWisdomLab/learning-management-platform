@@ -96,3 +96,33 @@ jobs:
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'" \
             | grep -x '8'
+      - name: Run learner registration API smoke test
+        env:
+          DATABASE_URL: postgres://lms_kernel:ci-only@127.0.0.1:5432/lms_kernel_test
+          PGPASSWORD: ci-only
+          LMS_BIND_ADDRESS: 127.0.0.1:8080
+        run: |
+          cargo +1.97.1 build --bin lms_api --locked
+          target/debug/lms_api > "$RUNNER_TEMP/lms_api.log" 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+          attempt=0
+          until curl --fail --silent http://127.0.0.1:8080/healthz > /dev/null; do
+            attempt=$((attempt + 1))
+            test "$attempt" -lt 60
+            sleep 1
+          done
+          tenant_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 \
+            --command "BEGIN; SET LOCAL app.tenant_id = '$tenant_id'; INSERT INTO learning_tenant (tenant_id, tenant_slug) VALUES ('$tenant_id', 'ci-tenant'); COMMIT;"
+          payload='{"identity_authority":"keyverse","external_subject_reference":"ci-subject","membership_status":"active"}'
+          curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data "$payload" \
+            --write-out '%{http_code}' \
+            --output "$RUNNER_TEMP/lms_api_response.json" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners" | grep -x '201'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' --data "$payload" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners")" = '409'
