@@ -13,7 +13,7 @@ The quality workflow checks the live migration catalog for:
 - 16 relations with row-level security enabled;
 - 16 relations with forced row-level security;
 - the `audit_event_record_tenant_occurred_idx` export index;
-- four audit events and their caller correlation IDs in the API smoke path;
+- five audit events, including a completion correction, and their caller correlation IDs in the API smoke path;
 - audit mutation rejection and cross-tenant export isolation.
 
 The local verification also applies `migrations/0001_learning_kernel.sql` to a fresh PostgreSQL 18.4 database and confirms the audit export index and 16 policies.
