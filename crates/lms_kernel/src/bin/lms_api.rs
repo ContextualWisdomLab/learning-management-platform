@@ -20,6 +20,7 @@ use lms_kernel::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
@@ -461,6 +462,64 @@ async fn begin_tenant_transaction(
         .execute(&mut *transaction)
         .await?;
     Ok(transaction)
+}
+
+struct AuditEvent<'a> {
+    tenant_id: Uuid,
+    correlation_id: Uuid,
+    action_name: &'a str,
+    entity_type: &'a str,
+    entity_id: Uuid,
+    source_authority: &'a str,
+    source_version: &'a str,
+    occurred_at: DateTime<Utc>,
+}
+
+fn audit_event_digest(event: &AuditEvent<'_>) -> String {
+    let mut hasher = Sha256::new();
+    for part in [
+        event.tenant_id.to_string(),
+        event.correlation_id.to_string(),
+        event.action_name.to_owned(),
+        event.entity_type.to_owned(),
+        event.entity_id.to_string(),
+        event.source_authority.to_owned(),
+        event.source_version.to_owned(),
+        event.occurred_at.to_rfc3339(),
+    ] {
+        hasher.update(part.as_bytes());
+        hasher.update([0_u8]);
+    }
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+async fn record_audit_event(
+    transaction: &mut Transaction<'_, Postgres>,
+    event: AuditEvent<'_>,
+) -> Result<(), ApiError> {
+    let event_digest = audit_event_digest(&event);
+    sqlx::query(
+        "INSERT INTO audit_event_record \
+         (tenant_id, correlation_id, action_name, entity_type, entity_id, \
+          source_authority, source_version, event_digest, occurred_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+    )
+    .bind(event.tenant_id)
+    .bind(event.correlation_id)
+    .bind(event.action_name)
+    .bind(event.entity_type)
+    .bind(event.entity_id)
+    .bind(event.source_authority)
+    .bind(event.source_version)
+    .bind(event_digest)
+    .bind(event.occurred_at)
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
 }
 
 async fn create_affiliation(
@@ -1060,7 +1119,7 @@ struct EvidenceInsertRequest<'a> {
 async fn insert_evidence_reference(
     transaction: &mut Transaction<'_, Postgres>,
     request: EvidenceInsertRequest<'_>,
-) -> Result<Uuid, ApiError> {
+) -> Result<(Uuid, bool), ApiError> {
     let evidence = sqlx::query(
         "INSERT INTO decision_evidence_reference \
          (tenant_id, learner_id, learning_registration_id, evidence_kind, source_authority, \
@@ -1087,7 +1146,7 @@ async fn insert_evidence_reference(
     .fetch_optional(&mut **transaction)
     .await?;
     if let Some(evidence) = evidence {
-        return Ok(evidence.try_get("decision_evidence_reference_id")?);
+        return Ok((evidence.try_get("decision_evidence_reference_id")?, true));
     }
 
     let idempotency_key = request.idempotency_key.ok_or(ApiError::Conflict)?;
@@ -1119,7 +1178,7 @@ async fn insert_evidence_reference(
     if !same_request {
         return Err(ApiError::Conflict);
     }
-    Ok(existing.try_get("decision_evidence_reference_id")?)
+    Ok((existing.try_get("decision_evidence_reference_id")?, false))
 }
 
 async fn create_evidence(
@@ -1164,7 +1223,7 @@ async fn create_evidence(
         .as_ref()
         .map(|status| assessment_result_status_name(status).to_owned());
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
-    let decision_evidence_reference_id = insert_evidence_reference(
+    let (decision_evidence_reference_id, _) = insert_evidence_reference(
         &mut transaction,
         EvidenceInsertRequest {
             tenant_id,
@@ -1233,8 +1292,9 @@ async fn create_assessment_result(
     )
     .map_err(map_kernel_error)?;
     let status_name = assessment_result_status_name(&assessment_result_status).to_owned();
+    let correlation_id = Uuid::new_v4();
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
-    let decision_evidence_reference_id = insert_evidence_reference(
+    let (decision_evidence_reference_id, inserted) = insert_evidence_reference(
         &mut transaction,
         EvidenceInsertRequest {
             tenant_id,
@@ -1248,6 +1308,22 @@ async fn create_assessment_result(
         },
     )
     .await?;
+    if inserted {
+        record_audit_event(
+            &mut transaction,
+            AuditEvent {
+                tenant_id,
+                correlation_id,
+                action_name: "assessment_result_reference.recorded",
+                entity_type: "decision_evidence_reference",
+                entity_id: decision_evidence_reference_id,
+                source_authority: &request.assessment_authority,
+                source_version: &request.source_version,
+                occurred_at: observed_at,
+            },
+        )
+        .await?;
+    }
     transaction.commit().await?;
 
     Ok((
@@ -1288,6 +1364,7 @@ async fn create_completion_decision(
         ));
     }
     let evaluated_at = request.evaluated_at.unwrap_or_else(Utc::now);
+    let correlation_id = Uuid::new_v4();
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
     let revision = sqlx::query(
         "SELECT completion_policy_id, revision_number, required_evidence_kinds \
@@ -1422,6 +1499,21 @@ async fn create_completion_decision(
     .bind(learning_registration_id)
     .execute(&mut *transaction)
     .await?;
+    let source_version = format!("policy-revision/{revision_number}");
+    record_audit_event(
+        &mut transaction,
+        AuditEvent {
+            tenant_id,
+            correlation_id,
+            action_name: "completion_decision.published",
+            entity_type: "completion_decision",
+            entity_id: completion_decision_id,
+            source_authority: "lms-policy-engine",
+            source_version: &source_version,
+            occurred_at: evaluated_at,
+        },
+    )
+    .await?;
     transaction.commit().await?;
 
     Ok((
@@ -1458,6 +1550,7 @@ async fn create_credential(
         return Err(ApiError::BadRequest("credential references are required"));
     }
 
+    let correlation_id = Uuid::new_v4();
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
     let credential = sqlx::query(
         "INSERT INTO credential_record \
@@ -1489,6 +1582,20 @@ async fn create_credential(
     ))?;
     let credential_record_id: Uuid = credential.try_get("credential_record_id")?;
     let issued_at: DateTime<Utc> = credential.try_get("issued_at")?;
+    record_audit_event(
+        &mut transaction,
+        AuditEvent {
+            tenant_id,
+            correlation_id,
+            action_name: "credential_record.issued",
+            entity_type: "credential_record",
+            entity_id: credential_record_id,
+            source_authority: &request.credential_authority,
+            source_version: "credential-reference/v1",
+            occurred_at: issued_at,
+        },
+    )
+    .await?;
     transaction.commit().await?;
 
     Ok((
@@ -1527,6 +1634,7 @@ async fn revoke_credential(
         return Err(ApiError::BadRequest("credential references are required"));
     }
 
+    let correlation_id = Uuid::new_v4();
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
     let credential = sqlx::query(
         "UPDATE credential_record SET credential_status = 'revoked', revoked_at = now() \
@@ -1544,6 +1652,7 @@ async fn revoke_credential(
     .bind(credential_record_id)
     .fetch_optional(&mut *transaction)
     .await?;
+    let newly_revoked = credential.is_some();
     let credential = match credential {
         Some(credential) => credential,
         None => sqlx::query(
@@ -1574,6 +1683,22 @@ async fn revoke_credential(
     let credential_status: String = credential.try_get("credential_status")?;
     let issued_at: DateTime<Utc> = credential.try_get("issued_at")?;
     let revoked_at: Option<DateTime<Utc>> = credential.try_get("revoked_at")?;
+    if newly_revoked && let Some(revoked_at) = revoked_at {
+        record_audit_event(
+            &mut transaction,
+            AuditEvent {
+                tenant_id,
+                correlation_id,
+                action_name: "credential_record.revoked",
+                entity_type: "credential_record",
+                entity_id: credential_record_id,
+                source_authority: &credential_authority,
+                source_version: "credential-reference/v1",
+                occurred_at: revoked_at,
+            },
+        )
+        .await?;
+    }
     transaction.commit().await?;
 
     Ok((

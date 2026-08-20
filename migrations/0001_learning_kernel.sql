@@ -264,6 +264,42 @@ CREATE TABLE credential_record (
     CONSTRAINT credential_record_identity_unique UNIQUE (tenant_id, credential_record_id)
 );
 
+CREATE TABLE audit_event_record (
+    audit_event_record_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL REFERENCES learning_tenant (tenant_id),
+    correlation_id uuid NOT NULL,
+    actor_authority text NOT NULL DEFAULT 'lms_api',
+    actor_subject_reference text NOT NULL DEFAULT 'service',
+    action_name text NOT NULL,
+    entity_type text NOT NULL,
+    entity_id uuid NOT NULL,
+    source_authority text NOT NULL,
+    source_version text NOT NULL,
+    event_digest text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT audit_event_record_reference_check
+        CHECK (length(btrim(actor_authority)) > 0
+            AND length(btrim(actor_subject_reference)) > 0
+            AND length(btrim(action_name)) > 0
+            AND length(btrim(entity_type)) > 0
+            AND length(btrim(source_authority)) > 0
+            AND length(btrim(source_version)) > 0
+            AND length(btrim(event_digest)) > 0),
+    CONSTRAINT audit_event_record_identity_unique UNIQUE (tenant_id, audit_event_record_id)
+);
+
+CREATE FUNCTION reject_audit_event_mutation() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'audit_event_record is append-only';
+END;
+$$;
+
+CREATE TRIGGER audit_event_record_append_only
+    BEFORE UPDATE OR DELETE ON audit_event_record
+    FOR EACH ROW EXECUTE FUNCTION reject_audit_event_mutation();
+
 CREATE TABLE learning_attempt (
     learning_attempt_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL,
@@ -330,6 +366,7 @@ ALTER TABLE decision_evidence_reference ENABLE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision ENABLE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision_evidence ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credential_record ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_event_record ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_offering ENABLE ROW LEVEL SECURITY;
 ALTER TABLE access_entitlement ENABLE ROW LEVEL SECURITY;
 ALTER TABLE enrollment_record ENABLE ROW LEVEL SECURITY;
@@ -355,6 +392,8 @@ CREATE POLICY completion_decision_evidence_tenant_policy ON completion_decision_
     USING (tenant_id::text = current_setting('app.tenant_id', true));
 CREATE POLICY credential_record_tenant_policy ON credential_record
     USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY audit_event_record_tenant_policy ON audit_event_record
+    USING (tenant_id::text = current_setting('app.tenant_id', true));
 CREATE POLICY course_offering_tenant_policy ON course_offering
     USING (tenant_id::text = current_setting('app.tenant_id', true));
 CREATE POLICY access_entitlement_tenant_policy ON access_entitlement
@@ -378,6 +417,7 @@ ALTER TABLE decision_evidence_reference FORCE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision FORCE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision_evidence FORCE ROW LEVEL SECURITY;
 ALTER TABLE credential_record FORCE ROW LEVEL SECURITY;
+ALTER TABLE audit_event_record FORCE ROW LEVEL SECURITY;
 ALTER TABLE course_offering FORCE ROW LEVEL SECURITY;
 ALTER TABLE access_entitlement FORCE ROW LEVEL SECURITY;
 ALTER TABLE enrollment_record FORCE ROW LEVEL SECURITY;

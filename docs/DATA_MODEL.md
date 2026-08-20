@@ -26,6 +26,7 @@ Initial entities:
 - `decision_evidence_reference`
 - `completion_decision`
 - `credential_record`
+- `audit_event_record`
 
 A learner is not assumed to be an employee, login account, payer, or contracting organization. Optional employment linkage is represented as an effective-dated `learning_affiliation` or external worker reference with `valid_from` and `valid_to`; no employee row is synthesized for a non-employee learner.
 
@@ -40,6 +41,8 @@ A learner is not assumed to be an employee, login account, payer, or contracting
 `completion_decision` has exactly one `learning_registration`, exactly one `completion_policy_revision`, and one or more `decision_evidence_reference` rows through tenant-scoped foreign keys. A registration may have multiple superseding decisions, but each decision is immutable after publication; correction creates a new decision with an explicit relation to the prior decision.
 
 `credential_record` is a tenant-scoped reference projection issued only from a completed registration and its exact completion decision. It stores the credential authority, opaque external credential reference, lifecycle status, and issue/revocation timestamps; it does not store a badge payload or become the Open Badges/CLR authority. The four-column decision foreign key prevents a credential from combining a learner, registration, and decision from different rows.
+
+`audit_event_record` is an append-only, tenant-scoped provenance record. It stores an opaque service actor, correlation UUID, action and entity identity, source authority/version, event digest, and occurrence time; it never copies learner, assessment, credential, or provider payloads. Row-level security and a mutation-rejecting trigger protect the record in addition to the API transaction boundary.
 
 Cardinality baseline:
 
