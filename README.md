@@ -22,4 +22,4 @@ Product work targets `develop`. Promotion from `develop` to `main` requires all 
 
 A predecessor-head result, queued check, skipped required check, or stale approval is not promotion evidence. The live GitHub ruleset remains authoritative if it requires more than this repository baseline.
 
-See `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, and `docs/doctoring/STANDARD_TRACEABILITY.md`.
+See `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/product-technical-gap-baseline.md`, and `docs/doctoring/STANDARD_TRACEABILITY.md`.
