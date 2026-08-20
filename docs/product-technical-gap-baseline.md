@@ -5,7 +5,7 @@
 
 ## Executive verdict
 
-The repository began as a documentation bootstrap and is not yet a usable learning-management product. The buyer-facing opportunity is clear: let an employee, partner, customer, candidate, association member, or self-sponsored learner complete a course without manufacturing an HR record, while keeping identity, content, evidence, assessment, and billing truth in their owning systems. The current stacked implementation has an executable Rust/PostgreSQL affiliation, registration, enrollment, launch-attempt, and progress-projection kernel, but no released integration client, versioned API contract, browser journey, completion execution, or production test suite. The first commercial slice is therefore the external-learner registration-to-completion vertical, delivered behind versioned contracts and proven with real PostgreSQL and end-to-end tests.
+The repository began as a documentation bootstrap and is not yet a usable learning-management product. The buyer-facing opportunity is clear: let an employee, partner, customer, candidate, association member, or self-sponsored learner complete a course without manufacturing an HR record, while keeping identity, content, evidence, assessment, and billing truth in their owning systems. The current stacked implementation has an executable Rust/PostgreSQL affiliation, registration, enrollment, launch-attempt, progress-projection, policy-evaluation, completion-decision, and credential-reference kernel, but no released integration client, browser journey, assessment execution, or production test suite. The first commercial slice is therefore the external-learner registration-to-credential vertical, delivered behind versioned contracts and proven with real PostgreSQL and end-to-end tests.
 
 The next customer-visible milestone is not another document: a tenant-isolated learner can be entitled, enrolled, launched, progress-tracked, assessed, and issued a reproducible completion result without an Orgmetra worker reference.
 
@@ -19,7 +19,8 @@ The next customer-visible milestone is not another document: a tenant-isolated l
 | PR [#5](https://github.com/ContextualWisdomLab/learning-management-platform/pull/5), stacked on PR #4 | Adds the offering→entitlement→enrollment→registration adapter, tenant-scoped RLS, and the real PostgreSQL/API smoke path on top of the open kernel PR. | This is an open stacked implementation PR, not merged product evidence; current checks and independent review still gate it. |
 | PR [#6](https://github.com/ContextualWisdomLab/learning-management-platform/pull/6) | Adds the tenant-safe effective-dated affiliation API and smoke coverage for partner learners. | It remains an open stacked PR; current checks and independent review gate it. |
 | PR [#7](https://github.com/ContextualWisdomLab/learning-management-platform/pull/7) | Adds launch attempts, LRS-owned progress projections, and out-of-order observation protection. | It remains an open stacked PR; current checks and independent review gate it. |
-| PR #8 (next stack, local branch) | Connects policy revisions and external evidence references to the Rust completion engine and immutable decision persistence. | It is not yet a GitHub PR or merged product evidence. |
+| PR [#8](https://github.com/ContextualWisdomLab/learning-management-platform/pull/8), exact head `9e679f075cd77cf34e3287771fa6d3a4e5b7dd2d` | Connects policy revisions and external evidence references to the Rust completion engine and immutable decision persistence. | It remains open with checks/review pending; it is not merged product evidence. |
+| PR #9 (next stack, local branch) | Adds tenant-safe credential reference issuance from a completed registration and exact completion decision. | It is not yet a GitHub PR or merged product evidence. |
 | Issue [#2](https://github.com/ContextualWisdomLab/learning-management-platform/issues/2) | Defines the repository boundary, modular-monolith slices, PostgreSQL 3NF, adapters, accessibility, and evidence gates. | This is the foundation backlog, not delivered functionality. |
 | Issue [#3](https://github.com/ContextualWisdomLab/learning-management-platform/issues/3) | Defines the external-learner vertical and acceptance criteria for identity separation, effective dating, replayable completion, tenancy, and coverage. | This is the first product slice to implement after the bootstrap merges. |
 
@@ -120,12 +121,12 @@ Production readiness requires CSAP and SOC 2 control mapping, SBOM and provenanc
 |---|---:|---|---|---|---|
 | G-01 | P0 | No merged executable LMS kernel or API | PR #4 open; local Rust/PostgreSQL/API smoke evidence exists | Running service with documented health and tenant context on merged exact head | Merge foundation stack after review/check gates |
 | G-02 | P0 | No merged learner/identity/employee/sponsor/payer separation | PR #4 has learner, membership, offering, entitlement, and composite tenant keys; PR #6 adds effective-dated affiliation API coverage | Real PostgreSQL schema and integration tests for all roles | Add sponsor/payer role and authorization coverage |
-| G-03 | P0 | No completed external learner journey | PR #5 implements offering through registration; PR #7 adds launch/progress; PR #8 adds completion decision persistence | Non-employee journey passes browser/API E2E through completion | Add assessment, credentials, browser E2E, and released contracts |
+| G-03 | P0 | No completed external learner journey | PR #5 implements offering through registration; PR #7 adds launch/progress; PR #8 adds completion decision persistence; PR #9 adds credential reference issuance | Non-employee journey passes browser/API E2E through completion and credential issuance | Add assessment execution, browser E2E, and released contracts |
 | G-04 | P0 | No time-aware affiliation or correction model | Requirements only | Effective-dated and replay/correction tests pass | Add valid-time and decision transaction metadata |
 | G-05 | P0 | No versioned external contracts | PR #1 lists planned identifiers only | Schemas, clients, contract tests, idempotent adapters | Add integration package and outbox |
-| G-06 | P0 | No deterministic completion/evidence engine | Data-model prose only | Replay produces the same decision from policy/evidence versions | Implement completion policy module |
+| G-06 | P0 | No deterministic completion/evidence engine | PR #8 evaluates versioned policy and immutable evidence in Rust and persists a replay fingerprint | Replay produces the same decision from policy/evidence versions on a real database | Add correction/supersession and assessment-result contract tests |
 | G-07 | P1 | No provenance, audit, or operational evidence | No runtime source | Correlation-linked audit and decision history with export | Add audit/provenance module |
-| G-08 | P1 | No PostgreSQL 3NF, RLS, migration, or hot-partition implementation | Entity vocabulary only | Migration, RLS, load, retention, and rollback evidence | Add real PostgreSQL migrations |
+| G-08 | P1 | No PostgreSQL hot-partition, retention, or rollback evidence | PRs #4–#9 provide 3NF tables, composite tenant FKs, RLS, and one embedded migration | Migration, RLS, load, retention, and rollback evidence | Measure append-heavy projections before adding partitions |
 | G-09 | P1 | No security/compliance control implementation | Standards profile only | CSAP/SOC 2/NIST control map with test receipts, SBOM, provenance | Add security and operability gates |
 | G-10 | P1 | No accessibility/UI/design-system surface | No frontend files | Storybook, token tests, browser interaction and i18n evidence | Start UI only after API journey is real |
 | G-11 | P1 | No realistic tests or coverage | No test tree | 100% owned statement/branch coverage plus edge and E2E evidence | Build tests with each vertical slice |
@@ -139,7 +140,7 @@ The current loop is:
 
 1. PR #1: validate its current exact head, obtain an independent current-head review, then merge only when the live rules permit it.
 2. Issue #2: add the executable modular-monolith foundation and repository gates.
-3. Issue #3: stack the external-learner vertical on that foundation; PR #5 covers registration, PR #6 affiliation, PR #7 launch/progress, and PR #8 completion persistence.
+3. Issue #3: stack the external-learner vertical on that foundation; PR #5 covers registration, PR #6 affiliation, PR #7 launch/progress, PR #8 completion persistence, and PR #9 credential issuance.
 4. Add the product gaps found by runtime evidence as the next bounded PR, not as speculative scaffolding.
 
 ## Standards and research evidence

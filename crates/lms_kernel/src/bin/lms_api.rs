@@ -270,6 +270,25 @@ struct CompletionDecisionResponse {
     completion_status: &'static str,
 }
 
+#[derive(Debug, Deserialize)]
+struct CreateCredentialRequest {
+    credential_authority: String,
+    external_credential_reference: String,
+}
+
+#[derive(Serialize)]
+struct CredentialResponse {
+    credential_record_id: Uuid,
+    tenant_id: Uuid,
+    learner_id: Uuid,
+    learning_registration_id: Uuid,
+    completion_decision_id: Uuid,
+    credential_authority: String,
+    external_credential_reference: String,
+    credential_status: &'static str,
+    issued_at: DateTime<Utc>,
+}
+
 /// Builds the HTTP router for the learner-registration adapter.
 fn router(pool: PgPool) -> Router {
     Router::new()
@@ -315,6 +334,10 @@ fn router(pool: PgPool) -> Router {
         .route(
             "/v1/tenants/{tenant_id}/learners/{learner_id}/registrations/{learning_registration_id}/completion-decisions",
             post(create_completion_decision),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/learners/{learner_id}/registrations/{learning_registration_id}/completion-decisions/{completion_decision_id}/credentials",
+            post(create_credential),
         )
         .with_state(AppState { pool })
 }
@@ -1196,6 +1219,75 @@ async fn create_completion_decision(
             replay_fingerprint: decision.replay_fingerprint,
             evaluated_at,
             completion_status: "completed",
+        }),
+    ))
+}
+
+async fn create_credential(
+    State(state): State<AppState>,
+    Path((tenant_id, learner_id, learning_registration_id, completion_decision_id)): Path<(
+        Uuid,
+        Uuid,
+        Uuid,
+        Uuid,
+    )>,
+    Json(request): Json<CreateCredentialRequest>,
+) -> Result<(StatusCode, Json<CredentialResponse>), ApiError> {
+    if tenant_id.is_nil()
+        || learner_id.is_nil()
+        || learning_registration_id.is_nil()
+        || completion_decision_id.is_nil()
+        || request.credential_authority.trim().is_empty()
+        || request.external_credential_reference.trim().is_empty()
+    {
+        return Err(ApiError::BadRequest("credential references are required"));
+    }
+
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let credential = sqlx::query(
+        "INSERT INTO credential_record \
+         (tenant_id, learner_id, learning_registration_id, completion_decision_id, \
+          credential_authority, external_credential_reference, credential_status) \
+         SELECT decision.tenant_id, decision.learner_id, decision.learning_registration_id, \
+                decision.completion_decision_id, $5, $6, 'issued' \
+         FROM completion_decision AS decision \
+         JOIN learning_registration AS registration \
+           ON registration.tenant_id = decision.tenant_id \
+          AND registration.learner_id = decision.learner_id \
+          AND registration.learning_registration_id = decision.learning_registration_id \
+         WHERE decision.tenant_id = $1 AND decision.learner_id = $2 \
+           AND decision.learning_registration_id = $3 \
+           AND decision.completion_decision_id = $4 \
+           AND registration.registration_status = 'completed' \
+         RETURNING credential_record_id, issued_at",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(learning_registration_id)
+    .bind(completion_decision_id)
+    .bind(&request.credential_authority)
+    .bind(&request.external_credential_reference)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ApiError::BadRequest(
+        "completed learning registration and decision are required",
+    ))?;
+    let credential_record_id: Uuid = credential.try_get("credential_record_id")?;
+    let issued_at: DateTime<Utc> = credential.try_get("issued_at")?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(CredentialResponse {
+            credential_record_id,
+            tenant_id,
+            learner_id,
+            learning_registration_id,
+            completion_decision_id,
+            credential_authority: request.credential_authority,
+            external_credential_reference: request.external_credential_reference,
+            credential_status: "issued",
+            issued_at,
         }),
     ))
 }

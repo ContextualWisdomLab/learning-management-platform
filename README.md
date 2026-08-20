@@ -4,7 +4,7 @@ A standards-oriented learning-management system for employees, customers, partne
 
 ## Scope
 
-The platform owns learning offerings, enrollment, learner affiliations, progression projections, and versioned completion decisions. Employment linkage is optional rather than assumed.
+The platform owns learning offerings, enrollment, learner affiliations, progression projections, versioned completion decisions, and credential reference orchestration. Employment linkage is optional rather than assumed.
 
 Identity remains in Keyverse; authored releases remain in Learning Content Studio; observed learning activity remains in the Learning Record Store; assessment response/result authority remains in Psychometrics Commons; commercial entitlement remains in the Billing Control Plane.
 
@@ -26,4 +26,4 @@ See `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/product-technical-gap-ba
 
 ## Executable kernel
 
-The current implementation branch contains a Rust domain kernel, a PostgreSQL migration, and a small learner-affiliation/registration/enrollment/progress/completion HTTP adapter. Run the domain checks with `cargo test --workspace --all-targets --locked`; run the API with `DATABASE_URL=postgres://... cargo run --bin lms_api`. The API applies `migrations/0001_learning_kernel.sql` on startup, exposes `GET /healthz`, and supports the bounded path `learners → affiliations → offerings → entitlements → enrollments → registrations → attempts → progress projections → completion decision`. External identity, content, evidence, assessment, and billing adapters remain separate follow-up contracts.
+The current implementation branch contains a Rust domain kernel, a PostgreSQL migration, and a small learner-affiliation/registration/enrollment/progress/completion/credential HTTP adapter. Run the domain checks with `cargo test --workspace --all-targets --locked`; run the API with `DATABASE_URL=postgres://... cargo run --bin lms_api`. The API applies `migrations/0001_learning_kernel.sql` on startup, exposes `GET /healthz`, and supports the bounded path `learners → affiliations → offerings → entitlements → enrollments → registrations → attempts → progress projections → completion decision → credential reference`. External identity, content, evidence, assessment, and billing adapters remain separate follow-up contracts.

@@ -110,6 +110,8 @@ CREATE TABLE completion_decision (
     CONSTRAINT completion_decision_supersedes_fk
         FOREIGN KEY (tenant_id, supersedes_decision_id)
         REFERENCES completion_decision (tenant_id, completion_decision_id),
+    CONSTRAINT completion_decision_registration_identity_unique
+        UNIQUE (tenant_id, learner_id, completion_decision_id, learning_registration_id),
     CONSTRAINT completion_decision_identity_unique UNIQUE (tenant_id, completion_decision_id)
 );
 
@@ -207,6 +209,39 @@ ALTER TABLE completion_decision
     FOREIGN KEY (tenant_id, learning_registration_id)
     REFERENCES learning_registration (tenant_id, learning_registration_id);
 
+CREATE TABLE credential_record (
+    credential_record_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    learner_id uuid NOT NULL,
+    learning_registration_id uuid NOT NULL,
+    completion_decision_id uuid NOT NULL,
+    credential_authority text NOT NULL,
+    external_credential_reference text NOT NULL,
+    credential_status text NOT NULL DEFAULT 'issued'
+        CHECK (credential_status IN ('issued', 'revoked')),
+    issued_at timestamptz NOT NULL DEFAULT now(),
+    revoked_at timestamptz,
+    CONSTRAINT credential_record_membership_fk
+        FOREIGN KEY (tenant_id, learner_id)
+        REFERENCES tenant_membership (tenant_id, learner_id),
+    CONSTRAINT credential_record_registration_fk
+        FOREIGN KEY (tenant_id, learner_id, learning_registration_id)
+        REFERENCES learning_registration (tenant_id, learner_id, learning_registration_id),
+    CONSTRAINT credential_record_decision_registration_fk
+        FOREIGN KEY (tenant_id, learner_id, completion_decision_id, learning_registration_id)
+        REFERENCES completion_decision
+            (tenant_id, learner_id, completion_decision_id, learning_registration_id),
+    CONSTRAINT credential_record_reference_check
+        CHECK (length(btrim(credential_authority)) > 0
+            AND length(btrim(external_credential_reference)) > 0),
+    CONSTRAINT credential_record_revocation_check
+        CHECK ((credential_status = 'issued' AND revoked_at IS NULL)
+            OR (credential_status = 'revoked' AND revoked_at IS NOT NULL AND revoked_at >= issued_at)),
+    CONSTRAINT credential_record_source_unique
+        UNIQUE (tenant_id, credential_authority, external_credential_reference),
+    CONSTRAINT credential_record_identity_unique UNIQUE (tenant_id, credential_record_id)
+);
+
 CREATE TABLE learning_attempt (
     learning_attempt_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL,
@@ -272,6 +307,7 @@ ALTER TABLE completion_policy_revision ENABLE ROW LEVEL SECURITY;
 ALTER TABLE decision_evidence_reference ENABLE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision ENABLE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision_evidence ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credential_record ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_offering ENABLE ROW LEVEL SECURITY;
 ALTER TABLE access_entitlement ENABLE ROW LEVEL SECURITY;
 ALTER TABLE enrollment_record ENABLE ROW LEVEL SECURITY;
@@ -295,6 +331,8 @@ CREATE POLICY completion_decision_tenant_policy ON completion_decision
     USING (tenant_id::text = current_setting('app.tenant_id', true));
 CREATE POLICY completion_decision_evidence_tenant_policy ON completion_decision_evidence
     USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY credential_record_tenant_policy ON credential_record
+    USING (tenant_id::text = current_setting('app.tenant_id', true));
 CREATE POLICY course_offering_tenant_policy ON course_offering
     USING (tenant_id::text = current_setting('app.tenant_id', true));
 CREATE POLICY access_entitlement_tenant_policy ON access_entitlement
@@ -317,6 +355,7 @@ ALTER TABLE completion_policy_revision FORCE ROW LEVEL SECURITY;
 ALTER TABLE decision_evidence_reference FORCE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision FORCE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision_evidence FORCE ROW LEVEL SECURITY;
+ALTER TABLE credential_record FORCE ROW LEVEL SECURITY;
 ALTER TABLE course_offering FORCE ROW LEVEL SECURITY;
 ALTER TABLE access_entitlement FORCE ROW LEVEL SECURITY;
 ALTER TABLE enrollment_record FORCE ROW LEVEL SECURITY;
