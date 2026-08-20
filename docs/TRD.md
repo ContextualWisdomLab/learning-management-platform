@@ -51,6 +51,8 @@ corrected audit action, bounded export, payload exclusion, RLS isolation, and
 append-only mutation rejection. Local verification additionally uses a
 PostgreSQL 18.4 database and a `NOSUPERUSER` application role.
 
-Operational gaps are deliberate: measured partitioning, retention ownership,
-backup/restore, rollback rehearsal, provider consumer contracts, browser E2E,
-and release certification are separate follow-up slices.
+Operational gaps are deliberate: production-shaped partitioning and recovery,
+retention ownership, rollback rehearsal, provider consumer contracts, browser
+E2E, and release certification are separate follow-up slices. A disposable
+backup/restore and forward-migration rehearsal is executable evidence, not a
+production recovery claim.
