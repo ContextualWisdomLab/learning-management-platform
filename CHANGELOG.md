@@ -22,3 +22,5 @@
 - Added optional `X-Correlation-ID` UUID propagation for audited assessment, completion, and credential operations, with generated IDs when callers omit the header.
 - Added tenant-scoped, bounded audit-event export without source payload fields.
 - Added PostgreSQL operational evidence baseline for forced RLS, audit export indexing, and explicit retention/rollback boundaries.
+- Added immutable completion corrections with same-registration predecessor validation and a distinct `completion_decision.corrected` audit event.
+- Added current PRD, TRD, UML interaction baseline, and ADR-0003 for the completion-correction contract.
