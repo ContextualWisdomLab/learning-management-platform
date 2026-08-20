@@ -35,6 +35,8 @@ jobs:
               Path("docs/ARCHITECTURE.md"),
               Path("docs/DATA_MODEL.md"),
               Path("docs/adr/0001-learning-authority-boundary.md"),
+              Path("docs/adr/0002-postgresql-operational-evidence.md"),
+              Path("docs/operational/POSTGRES_READINESS.md"),
               Path("docs/doctoring/STANDARD_TRACEABILITY.md"),
           ]
           missing = [str(path) for path in required if not path.is_file()]
@@ -113,6 +115,16 @@ jobs:
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
           test "$policy_count" = '16'
+          rls_enabled_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_class AS relation JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace WHERE namespace.nspname = 'public' AND relation.relkind = 'r' AND relation.relrowsecurity")
+          test "$rls_enabled_count" = '16'
+          force_rls_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_class AS relation JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace WHERE namespace.nspname = 'public' AND relation.relkind = 'r' AND relation.relforcerowsecurity")
+          test "$force_rls_count" = '16'
+          test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align --command "SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'audit_event_record_tenant_occurred_idx'")" = '1'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_constraint WHERE conname = 'completion_decision_registration_fk'")" = '1'
