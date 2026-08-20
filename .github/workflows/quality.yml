@@ -109,7 +109,7 @@ jobs:
           policy_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
-          test "$policy_count" = '12'
+          test "$policy_count" = '14'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_constraint WHERE conname = 'completion_decision_registration_fk'")" = '1'
@@ -156,6 +156,22 @@ jobs:
             --header 'content-type: application/json' \
             --data '{"external_registration_reference":"registration-ci-1"}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments/$enrollment_id/registrations" \
-            | python3 -c 'import json, sys; assert json.load(sys.stdin)["registration_status"] == "registered"'
+            --output "$RUNNER_TEMP/lms_registration_response.json"
+          python3 -c 'import json, sys; assert json.load(open(sys.argv[1]))["registration_status"] == "registered"' "$RUNNER_TEMP/lms_registration_response.json"
+          registration_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["learning_registration_id"])' "$RUNNER_TEMP/lms_registration_response.json")
+          attempt_id=$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data '{"external_attempt_reference":"attempt-ci-1","content_release_reference":"content-release/v1/partner-basics"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/attempts" \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["learning_attempt_id"])')
+          curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data '{"source_authority":"lrs","external_activity_reference":"activity-ci-1","source_version":"v1","source_digest":"sha256:ci-progress","progress_state":"in_progress","progress_percent":50,"observed_at":"2026-01-01T00:00:00Z"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/attempts/$attempt_id/progress" \
+            | python3 -c 'import json, sys; assert json.load(sys.stdin)["progress_state"] == "in_progress"'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' \
+            --data '{"source_authority":"lrs","external_activity_reference":"activity-ci-1","source_version":"v1","source_digest":"sha256:ci-progress-old","progress_state":"in_progress","progress_percent":25,"observed_at":"2025-01-01T00:00:00Z"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/attempts/$attempt_id/progress")" = '400'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
-            --tuples-only --no-align --command "SELECT count(*) FROM enrollment_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
+            --tuples-only --no-align --command "SELECT count(*) FROM progress_projection WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'

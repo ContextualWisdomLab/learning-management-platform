@@ -20,6 +20,7 @@ Initial entities:
 - `enrollment_record`
 - `learning_registration`
 - `learning_attempt`
+- `progress_projection`
 - `completion_policy`
 - `completion_policy_revision`
 - `decision_evidence_reference`
@@ -55,6 +56,8 @@ course_offering 1 ---- * enrollment_record
 `access_entitlement` is a versioned local reference/projection of an entitlement owned by the Billing Control Plane or another authorized entitlement authority. It stores the external entitlement reference, source authority, effective interval, and observed version/digest. It does not store provider payment objects or become the authoritative commercial permission record.
 
 The executable registration path creates a `course_offering`, projects an active `access_entitlement` only for an active tenant membership, creates an `enrollment_record` only when the offering and entitlement are active for the same learner, and creates one `learning_registration` for that enrollment. The migration uses tenant-scoped composite foreign keys and RLS for each relation; external billing and content payloads remain out of the database.
+
+`learning_attempt` records a learner's launch against a registration and immutable content-release reference. `progress_projection` stores only the LRS authority, opaque activity reference, source version/digest, observed time, and a bounded progress value/state; it never stores the source activity payload. Repeated source versions are idempotent when newer or equal observations arrive, while older observations are rejected so progress cannot move backward silently.
 
 All authoritative facts are normalized to 3NF; repeated names, provider payloads, and external-system facts are referenced through dedicated identifiers rather than embedded denormalized copies.
 
