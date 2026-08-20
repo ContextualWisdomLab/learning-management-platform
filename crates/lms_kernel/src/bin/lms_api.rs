@@ -42,8 +42,10 @@ impl IntoResponse for ApiError {
 
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
-        if matches!(&error, sqlx::Error::Database(database_error) if database_error.code().as_deref() == Some("23505"))
-        {
+        if matches!(&error, sqlx::Error::Database(database_error) if matches!(
+            database_error.code().as_deref(),
+            Some("23505") | Some("23P01")
+        )) {
             Self::Conflict
         } else {
             Self::Database(error)
@@ -75,6 +77,23 @@ struct LearnerResponse {
     identity_authority: String,
     external_subject_reference: String,
     membership_status: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateAffiliationRequest {
+    affiliation_kind: String,
+    valid_from: Option<DateTime<Utc>>,
+    valid_to: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize)]
+struct AffiliationResponse {
+    learning_affiliation_id: Uuid,
+    tenant_id: Uuid,
+    learner_id: Uuid,
+    affiliation_kind: String,
+    valid_from: DateTime<Utc>,
+    valid_to: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -145,6 +164,10 @@ fn router(pool: PgPool) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/v1/tenants/{tenant_id}/learners", post(create_learner))
+        .route(
+            "/v1/tenants/{tenant_id}/learners/{learner_id}/affiliations",
+            post(create_affiliation),
+        )
         .route("/v1/tenants/{tenant_id}/offerings", post(create_offering))
         .route(
             "/v1/tenants/{tenant_id}/learners/{learner_id}/entitlements",
@@ -254,6 +277,74 @@ async fn begin_tenant_transaction(
         .execute(&mut *transaction)
         .await?;
     Ok(transaction)
+}
+
+async fn create_affiliation(
+    State(state): State<AppState>,
+    Path((tenant_id, learner_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<CreateAffiliationRequest>,
+) -> Result<(StatusCode, Json<AffiliationResponse>), ApiError> {
+    if tenant_id.is_nil() || learner_id.is_nil() || request.affiliation_kind.trim().is_empty() {
+        return Err(ApiError::BadRequest("affiliation references are required"));
+    }
+    if !matches!(
+        request.affiliation_kind.as_str(),
+        "employee"
+            | "contractor"
+            | "partner"
+            | "customer"
+            | "candidate"
+            | "student"
+            | "guardian"
+            | "association_member"
+            | "public_learner"
+            | "self_sponsored"
+    ) {
+        return Err(ApiError::BadRequest("affiliation kind is invalid"));
+    }
+    let valid_from = request.valid_from.unwrap_or_else(Utc::now);
+    if request
+        .valid_to
+        .is_some_and(|valid_to| valid_to <= valid_from)
+    {
+        return Err(ApiError::BadRequest(
+            "affiliation validity interval is invalid",
+        ));
+    }
+
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let affiliation = sqlx::query(
+        "INSERT INTO learning_affiliation \
+         (tenant_id, learner_id, affiliation_kind, valid_from, valid_to) \
+         SELECT $1, $2, $3, $4, $5 \
+         FROM tenant_membership \
+         WHERE tenant_id = $1 AND learner_id = $2 \
+           AND membership_status = 'active' AND valid_from <= now() \
+           AND (valid_to IS NULL OR valid_to > now()) \
+         RETURNING learning_affiliation_id",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(&request.affiliation_kind)
+    .bind(valid_from)
+    .bind(request.valid_to)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ApiError::BadRequest("learner membership is not active"))?;
+    let learning_affiliation_id: Uuid = affiliation.try_get("learning_affiliation_id")?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(AffiliationResponse {
+            learning_affiliation_id,
+            tenant_id,
+            learner_id,
+            affiliation_kind: request.affiliation_kind,
+            valid_from,
+            valid_to: request.valid_to,
+        }),
+    ))
 }
 
 async fn create_offering(
