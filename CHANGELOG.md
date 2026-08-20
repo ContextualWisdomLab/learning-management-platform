@@ -25,3 +25,4 @@
 - Added immutable completion corrections with same-registration predecessor validation and a distinct `completion_decision.corrected` audit event.
 - Added current PRD, TRD, UML interaction baseline, and ADR-0003 for the completion-correction contract.
 - Added a disposable PostgreSQL backup/restore rehearsal with measured tenant skew and a forward audit-correlation index migration.
+- Added stable keyset pagination for tenant audit export with paired timestamp/UUID cursors and partial-cursor rejection.

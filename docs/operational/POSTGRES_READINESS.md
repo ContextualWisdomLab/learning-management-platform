@@ -3,7 +3,7 @@
 **As of:** 2026-08-20  
 **Status:** executable evidence baseline; not a production-readiness or certification claim.
 
-The current migration is a forward-only embedded migration. The application role receives a transaction-local `app.tenant_id`, and tenant-owned relations use PostgreSQL row-level security as defense in depth. `audit_event_record` is append-only, protected by a mutation-rejecting trigger, and indexed by tenant and occurrence time for bounded export.
+The current migration is a forward-only embedded migration. The application role receives a transaction-local `app.tenant_id`, and tenant-owned relations use PostgreSQL row-level security as defense in depth. `audit_event_record` is append-only, protected by a mutation-rejecting trigger, and indexed by tenant and occurrence time for bounded/keyset export.
 
 ## Current evidence
 
@@ -13,8 +13,9 @@ The quality workflow checks the live migration catalog for:
 - 16 relations with row-level security enabled;
 - 16 relations with forced row-level security;
 - the `audit_event_record_tenant_occurred_idx` export index;
+- the `audit_event_record_tenant_correlation_idx` incident-correlation index;
 - five audit events, including a completion correction, and their caller correlation IDs in the API smoke path;
-- audit mutation rejection and cross-tenant export isolation.
+- audit mutation rejection, cross-tenant export isolation, and keyset pagination.
 
 The local verification also applies `migrations/0001_learning_kernel.sql` to a fresh PostgreSQL 18.4 database and confirms the audit export index and 16 policies.
 
@@ -25,6 +26,11 @@ anonymized audit events across two non-empty tenants (900/100, skew ratio
 restored both tenant distributions unchanged, preserved 16 forced-RLS
 relations, and applied the forward `0002_audit_correlation_index.sql`
 migration. The databases and rows were disposable rehearsal data.
+
+A separate real PostgreSQL/API smoke run on the same date returned a first page
+of two events, a cursor page of the remaining three in stable order, HTTP 400
+for a partial cursor, and an empty result for a second tenant. Its database,
+tenant references, and audit rows were disposable and anonymized.
 
 ## Known operational boundary
 

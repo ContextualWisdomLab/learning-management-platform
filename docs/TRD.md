@@ -42,13 +42,16 @@ match the predecessor.
 - API responses expose opaque UUID references and audit provenance, not source
   payloads or actor secrets.
 - A missing correlation header generates a UUID; a malformed UUID is HTTP 400.
+- Audit export accepts `limit=1..1000`; larger histories use the paired
+  `after_occurred_at` and `after_audit_event_record_id` keyset cursor. A partial
+  cursor is HTTP 400.
 
 ## Verification contract
 
 The exact-head workflow must verify the migration catalog, valid and invalid
 correction requests, predecessor linkage, decision count, correlation IDs,
-corrected audit action, bounded export, payload exclusion, RLS isolation, and
-append-only mutation rejection. Local verification additionally uses a
+corrected audit action, bounded/keyset export, payload exclusion, RLS isolation,
+and append-only mutation rejection. Local verification additionally uses a
 PostgreSQL 18.4 database and a `NOSUPERUSER` application role.
 
 Operational gaps are deliberate: production-shaped partitioning and recovery,

@@ -311,6 +311,8 @@ struct CredentialResponse {
 #[derive(Debug, Deserialize)]
 struct AuditEventQuery {
     limit: Option<i64>,
+    after_occurred_at: Option<DateTime<Utc>>,
+    after_audit_event_record_id: Option<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -412,6 +414,11 @@ async fn list_audit_events(
             "audit event limit must be between 1 and 1000",
         ));
     }
+    if query.after_occurred_at.is_some() != query.after_audit_event_record_id.is_some() {
+        return Err(ApiError::BadRequest(
+            "audit event cursor requires after_occurred_at and after_audit_event_record_id together",
+        ));
+    }
 
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
     let rows = sqlx::query(
@@ -420,10 +427,14 @@ async fn list_audit_events(
                 source_authority, source_version, event_digest, occurred_at \
          FROM audit_event_record \
          WHERE tenant_id = $1 \
+           AND (($2::timestamptz IS NULL AND $3::uuid IS NULL) \
+                OR (occurred_at, audit_event_record_id) > ($2::timestamptz, $3::uuid)) \
          ORDER BY occurred_at, audit_event_record_id \
-         LIMIT $2",
+         LIMIT $4",
     )
     .bind(tenant_id)
+    .bind(query.after_occurred_at)
+    .bind(query.after_audit_event_record_id)
     .bind(limit)
     .fetch_all(&mut *transaction)
     .await?;
