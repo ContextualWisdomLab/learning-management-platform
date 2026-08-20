@@ -21,7 +21,7 @@ the audit stream.
 |---|---|---|
 | Tenant learning administrator | Operate an external learner journey without an employee row | Real PostgreSQL/API path reaches completion and credential reference |
 | Learner | Receive a reproducible completion result from owned evidence and an assessment authority | Passed assessment and required evidence produce `completed` |
-| Auditor/operator | Explain what changed without exposing provider payloads | Tenant-scoped audit export contains provenance, digest, correlation, and correction action |
+| Auditor/operator | Explain what changed without exposing provider payloads | Tenant-scoped audit export contains provenance, digest, correlation, correction action, and stable keyset pagination |
 | Integrator | Retry external assessment delivery safely | Registration-bound idempotency returns the same evidence reference |
 
 ## Functional requirements
@@ -37,7 +37,9 @@ the audit stream.
 5. Require correlation IDs to be valid UUIDs when supplied and preserve them in
    audited writes.
 6. Export bounded provenance metadata only; source assessment, credential, and
-   provider payloads must not be copied into the export.
+   provider payloads must not be copied into the export. A caller can walk
+   larger histories with the `after_occurred_at` and
+   `after_audit_event_record_id` keyset cursor.
 
 ## Non-functional requirements
 
@@ -58,7 +60,7 @@ the audit stream.
 |---|---|---|
 | External learner boundary | `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md` | PR #4–#12 stacked API and migration work |
 | Immutable correction | ADR-0003, `create_completion_decision` | PR #17 exact head and real PostgreSQL/API run |
-| Provenance export | ADR-0002, `audit_event_record` | PR #13–#16 and quality smoke path |
+| Provenance export | ADR-0002, ADR-0004, `audit_event_record` | PR #13–#16 and quality smoke path |
 | Standards and research | `docs/doctoring/STANDARD_TRACEABILITY.md` | APA 7 source map; conformance remains unclaimed |
 
 The current gap register and open-PR ledger remain authoritative in

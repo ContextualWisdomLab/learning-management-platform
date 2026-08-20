@@ -37,6 +37,7 @@ jobs:
               Path("docs/adr/0001-learning-authority-boundary.md"),
               Path("docs/adr/0002-postgresql-operational-evidence.md"),
               Path("docs/adr/0003-completion-correction.md"),
+              Path("docs/adr/0004-audit-export-pagination.md"),
               Path("docs/PRD.md"),
               Path("docs/TRD.md"),
               Path("docs/UML.md"),
@@ -286,6 +287,36 @@ jobs:
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/audit-events?limit=10" \
             --output "$RUNNER_TEMP/lms_audit_response.json"
           python3 -c 'import json, sys; events=json.load(open(sys.argv[1])); assert len(events) == 5; assert all(event["event_digest"] and "external_result_reference" not in event for event in events)' "$RUNNER_TEMP/lms_audit_response.json"
+          audit_cursor_query=$(python3 - "$RUNNER_TEMP/lms_audit_response.json" <<'PY'
+          import json
+          import sys
+          from urllib.parse import urlencode
+
+          events = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert len(events) == 5
+          cursor = events[1]
+          print(urlencode({
+              "limit": "10",
+              "after_occurred_at": cursor["occurred_at"],
+              "after_audit_event_record_id": cursor["audit_event_record_id"],
+          }))
+          PY
+          )
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/audit-events?$audit_cursor_query" \
+            --output "$RUNNER_TEMP/lms_audit_cursor_response.json"
+          python3 - "$RUNNER_TEMP/lms_audit_response.json" "$RUNNER_TEMP/lms_audit_cursor_response.json" <<'PY'
+          import json
+          import sys
+
+          all_events = json.load(open(sys.argv[1], encoding="utf-8"))
+          remaining_events = json.load(open(sys.argv[2], encoding="utf-8"))
+          assert [event["audit_event_record_id"] for event in remaining_events] == [
+              event["audit_event_record_id"] for event in all_events[2:]
+          ]
+          PY
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/audit-events?after_occurred_at=2026-01-01T00:00:00Z")" = '400'
           if psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --set ON_ERROR_STOP=1 \
             --command "BEGIN; SET LOCAL app.tenant_id = '$tenant_id'; UPDATE audit_event_record SET event_digest = 'tampered' WHERE tenant_id = '$tenant_id'; COMMIT;" \
