@@ -96,6 +96,18 @@ pub enum EvidenceKind {
     Entitlement,
 }
 
+/// The outcome status supplied by the external assessment authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssessmentResultStatus {
+    /// The result satisfies the external assessment authority's passing rule.
+    Passed,
+    /// The result does not satisfy the external assessment authority's passing rule.
+    Failed,
+    /// The authority has not produced a decisive pass or fail result.
+    Inconclusive,
+}
+
 /// The source metadata required to reference evidence owned by another system.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EvidenceSourceMetadata {
@@ -149,6 +161,8 @@ pub struct DecisionEvidenceReference {
     pub evidence_id: Uuid,
     /// The evidence category used by policy evaluation.
     pub evidence_kind: EvidenceKind,
+    /// The external assessment outcome, required only for assessment evidence.
+    pub assessment_result_status: Option<AssessmentResultStatus>,
     /// The immutable metadata from the owning system.
     pub source_metadata: EvidenceSourceMetadata,
     /// When the source observation was made.
@@ -164,14 +178,40 @@ impl DecisionEvidenceReference {
         source_metadata: EvidenceSourceMetadata,
         observed_at: DateTime<Utc>,
     ) -> Result<Self, KernelError> {
+        Self::new_with_assessment_status(
+            tenant_id,
+            learner_id,
+            evidence_kind,
+            source_metadata,
+            observed_at,
+            None,
+        )
+    }
+
+    /// Creates an evidence reference with an optional external assessment outcome.
+    pub fn new_with_assessment_status(
+        tenant_id: Uuid,
+        learner_id: Uuid,
+        evidence_kind: EvidenceKind,
+        source_metadata: EvidenceSourceMetadata,
+        observed_at: DateTime<Utc>,
+        assessment_result_status: Option<AssessmentResultStatus>,
+    ) -> Result<Self, KernelError> {
         if tenant_id.is_nil() || learner_id.is_nil() {
             return Err(KernelError::NilIdentifier);
+        }
+        if evidence_kind == EvidenceKind::Assessment && assessment_result_status.is_none() {
+            return Err(KernelError::MissingAssessmentResultStatus);
+        }
+        if evidence_kind != EvidenceKind::Assessment && assessment_result_status.is_some() {
+            return Err(KernelError::AssessmentResultStatusNotAllowed);
         }
         Ok(Self {
             tenant_id,
             learner_id,
             evidence_id: Uuid::new_v4(),
             evidence_kind,
+            assessment_result_status,
             source_metadata,
             observed_at,
         })
@@ -186,15 +226,37 @@ impl DecisionEvidenceReference {
         source_metadata: EvidenceSourceMetadata,
         observed_at: DateTime<Utc>,
     ) -> Result<Self, KernelError> {
+        Self::from_existing_with_assessment_status(
+            tenant_id,
+            learner_id,
+            evidence_id,
+            evidence_kind,
+            source_metadata,
+            observed_at,
+            None,
+        )
+    }
+
+    /// Rehydrates an evidence reference with an assessment outcome and stable ID.
+    pub fn from_existing_with_assessment_status(
+        tenant_id: Uuid,
+        learner_id: Uuid,
+        evidence_id: Uuid,
+        evidence_kind: EvidenceKind,
+        source_metadata: EvidenceSourceMetadata,
+        observed_at: DateTime<Utc>,
+        assessment_result_status: Option<AssessmentResultStatus>,
+    ) -> Result<Self, KernelError> {
         if evidence_id.is_nil() {
             return Err(KernelError::NilIdentifier);
         }
-        let mut reference = Self::new(
+        let mut reference = Self::new_with_assessment_status(
             tenant_id,
             learner_id,
             evidence_kind,
             source_metadata,
             observed_at,
+            assessment_result_status,
         )?;
         reference.evidence_id = evidence_id;
         Ok(reference)
@@ -252,6 +314,15 @@ pub enum KernelError {
     /// Evidence lacks an immutable source reference.
     #[error("evidence source metadata is required")]
     MissingEvidenceMetadata,
+    /// Assessment evidence lacks the external authority's outcome status.
+    #[error("assessment evidence must include a result status")]
+    MissingAssessmentResultStatus,
+    /// A non-assessment evidence row supplied an assessment-only field.
+    #[error("assessment result status is only valid for assessment evidence")]
+    AssessmentResultStatusNotAllowed,
+    /// Assessment evidence is not a passed result.
+    #[error("assessment result is not passed")]
+    AssessmentResultNotPassed,
     /// A policy or evidence row belongs to another tenant or learner.
     #[error("tenant and learner boundaries must match the decision")]
     BoundaryMismatch,
@@ -308,6 +379,11 @@ pub fn evaluate_completion(
         if !seen_ids.insert(reference.evidence_id) {
             return Err(KernelError::DuplicateEvidence);
         }
+        if reference.evidence_kind == EvidenceKind::Assessment
+            && reference.assessment_result_status != Some(AssessmentResultStatus::Passed)
+        {
+            return Err(KernelError::AssessmentResultNotPassed);
+        }
         evidence_ids.push(reference.evidence_id);
         evidence_kinds.insert(reference.evidence_kind.clone());
     }
@@ -318,11 +394,16 @@ pub fn evaluate_completion(
         return Err(KernelError::IncompleteEvidence);
     }
     evidence_ids.sort_unstable();
+    let mut evidence_fingerprints: Vec<(Uuid, Option<AssessmentResultStatus>)> = evidence
+        .iter()
+        .map(|reference| (reference.evidence_id, reference.assessment_result_status))
+        .collect();
+    evidence_fingerprints.sort_unstable_by_key(|(evidence_id, _)| *evidence_id);
     let replay_fingerprint = fingerprint(
         tenant_id,
         learner_id,
         &policy_revision,
-        &evidence_ids,
+        &evidence_fingerprints,
         evaluated_at,
     );
     Ok(CompletionDecision {
@@ -340,7 +421,7 @@ fn fingerprint(
     tenant_id: Uuid,
     learner_id: Uuid,
     policy_revision: &CompletionPolicyRevision,
-    evidence_ids: &[Uuid],
+    evidence_fingerprints: &[(Uuid, Option<AssessmentResultStatus>)],
     evaluated_at: DateTime<Utc>,
 ) -> String {
     let mut hasher = Sha256::new();
@@ -356,8 +437,13 @@ fn fingerprint(
                 .as_bytes(),
         );
     }
-    for evidence_id in evidence_ids {
+    for (evidence_id, assessment_result_status) in evidence_fingerprints {
         hasher.update(evidence_id.as_bytes());
+        hasher.update(
+            serde_json::to_string(assessment_result_status)
+                .expect("assessment status serialization cannot fail")
+                .as_bytes(),
+        );
     }
     hasher
         .finalize()
@@ -379,13 +465,16 @@ mod tests {
         learner_id: Uuid,
         kind: EvidenceKind,
     ) -> DecisionEvidenceReference {
-        DecisionEvidenceReference::new(
+        let assessment_result_status =
+            (kind == EvidenceKind::Assessment).then_some(AssessmentResultStatus::Passed);
+        DecisionEvidenceReference::new_with_assessment_status(
             tenant_id,
             learner_id,
             kind,
             EvidenceSourceMetadata::new("learning_record_store", "snapshot-1", "digest-1", "v1")
                 .expect("valid source metadata"),
             DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp"),
+            assessment_result_status,
         )
         .expect("valid evidence")
     }
@@ -465,6 +554,43 @@ mod tests {
         assert_eq!(
             evaluate_completion(tenant_id, learner_id, policy, &[foreign], at),
             Err(KernelError::BoundaryMismatch)
+        );
+    }
+
+    #[test]
+    fn rejects_failed_assessment_evidence() {
+        let (tenant_id, learner_id) = ids();
+        let failed = DecisionEvidenceReference::new_with_assessment_status(
+            tenant_id,
+            learner_id,
+            EvidenceKind::Assessment,
+            EvidenceSourceMetadata::new(
+                "psychometrics_commons",
+                "assessment-result-1",
+                "digest-1",
+                "v1",
+            )
+            .expect("valid source metadata"),
+            DateTime::from_timestamp(1_700_000_002, 0).expect("fixed timestamp"),
+            Some(AssessmentResultStatus::Failed),
+        )
+        .expect("valid assessment reference");
+        let policy = CompletionPolicyRevision::new(
+            tenant_id,
+            Uuid::from_u128(3),
+            1,
+            BTreeSet::from([EvidenceKind::Assessment]),
+        )
+        .expect("valid policy");
+        assert_eq!(
+            evaluate_completion(
+                tenant_id,
+                learner_id,
+                policy,
+                &[failed],
+                DateTime::from_timestamp(1_700_000_003, 0).expect("fixed timestamp"),
+            ),
+            Err(KernelError::AssessmentResultNotPassed)
         );
     }
 

@@ -25,6 +25,8 @@ The following table is a **planned adoption profile**. Adoption does not imply i
 
 A future conformance claim must identify the exact revision, normative requirement, implementation location, executable test path/command, and exact-head CI receipt. Third-party certification claims require the applicable certification program and may not be inferred from these adoption decisions.
 
+The local `assessment_result_reference/v1` contract is an LMS reference boundary for Psychometrics Commons, not a QTI implementation or conformance claim. It stores an opaque result reference, digest, source version, outcome status, and observation time; assessment responses, item content, and scoring payloads remain external. The exact-head API smoke path proves passed-only completion behavior, while provider-consumer contract tests and QTI conformance remain open.
+
 ## Current source and research references (APA 7)
 
 The following references were checked on 2026-08-20. They support planning decisions only; `Not evidenced` remains the status until this repository contains executable implementation and exact-head receipts.

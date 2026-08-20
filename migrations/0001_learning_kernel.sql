@@ -84,10 +84,17 @@ CREATE TABLE decision_evidence_reference (
     source_snapshot_reference text NOT NULL,
     source_digest text NOT NULL,
     source_version text NOT NULL,
+    assessment_result_status text,
     observed_at timestamptz NOT NULL,
     CONSTRAINT decision_evidence_reference_membership_fk
         FOREIGN KEY (tenant_id, learner_id)
         REFERENCES tenant_membership (tenant_id, learner_id),
+    CONSTRAINT decision_evidence_reference_kind_check
+        CHECK (evidence_kind IN ('activity', 'assessment', 'attendance', 'entitlement')),
+    CONSTRAINT decision_evidence_reference_assessment_status_check
+        CHECK ((evidence_kind = 'assessment'
+            AND assessment_result_status IN ('passed', 'failed', 'inconclusive'))
+            OR (evidence_kind <> 'assessment' AND assessment_result_status IS NULL)),
     CONSTRAINT decision_evidence_reference_identity_unique UNIQUE (tenant_id, decision_evidence_reference_id)
 );
 

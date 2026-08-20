@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ContextualWisdomLab/learning-management-platform/blob/develop/contracts/assessment_result_reference/v1.schema.json",
+  "title": "Assessment result reference v1",
+  "description": "A reference to an assessment result owned by Psychometrics Commons; the result payload remains external.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "assessment_authority",
+    "external_result_reference",
+    "source_digest",
+    "source_version",
+    "assessment_result_status",
+    "observed_at"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "assessment_result_reference/v1"
+    },
+    "assessment_authority": {
+      "type": "string",
+      "minLength": 1
+    },
+    "external_result_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_digest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "assessment_result_status": {
+      "enum": ["passed", "failed", "inconclusive"]
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

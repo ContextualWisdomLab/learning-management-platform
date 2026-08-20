@@ -16,3 +16,4 @@
 - Added policy revision, external evidence reference, and Rust-evaluated completion decision persistence.
 - Added tenant-safe credential reference issuance from a completed registration and exact completion decision.
 - Added idempotent credential reference revocation with tenant and decision-boundary checks.
+- Added versioned assessment-result reference handoff with external outcome status and passed-only completion evaluation.
