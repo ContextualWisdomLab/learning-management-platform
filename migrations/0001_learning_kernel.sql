@@ -288,6 +288,9 @@ CREATE TABLE audit_event_record (
     CONSTRAINT audit_event_record_identity_unique UNIQUE (tenant_id, audit_event_record_id)
 );
 
+CREATE INDEX audit_event_record_tenant_occurred_idx
+    ON audit_event_record (tenant_id, occurred_at, audit_event_record_id);
+
 CREATE FUNCTION reject_audit_event_mutation() RETURNS trigger
 LANGUAGE plpgsql
 AS $$
