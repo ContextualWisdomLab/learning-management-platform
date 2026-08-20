@@ -92,16 +92,6 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo +1.97.1 doc --workspace --no-deps --locked
-      - name: Apply and inspect PostgreSQL migration
-        env:
-          PGPASSWORD: ci-only
-        run: |
-          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
-            --set ON_ERROR_STOP=1 --file migrations/0001_learning_kernel.sql
-          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
-            --tuples-only --no-align \
-            --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'" \
-            | grep -x '8'
       - name: Run learner registration API smoke test
         env:
           DATABASE_URL: postgres://lms_kernel:ci-only@127.0.0.1:5432/lms_kernel_test
@@ -118,6 +108,10 @@ jobs:
             test "$attempt" -lt 60
             sleep 1
           done
+          policy_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
+          test "$policy_count" = '8'
           tenant_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
           psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --set ON_ERROR_STOP=1 \
