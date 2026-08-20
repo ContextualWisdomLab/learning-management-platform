@@ -36,6 +36,10 @@ jobs:
               Path("docs/DATA_MODEL.md"),
               Path("docs/adr/0001-learning-authority-boundary.md"),
               Path("docs/adr/0002-postgresql-operational-evidence.md"),
+              Path("docs/adr/0003-completion-correction.md"),
+              Path("docs/PRD.md"),
+              Path("docs/TRD.md"),
+              Path("docs/UML.md"),
               Path("docs/operational/POSTGRES_READINESS.md"),
               Path("docs/doctoring/STANDARD_TRACEABILITY.md"),
           ]
