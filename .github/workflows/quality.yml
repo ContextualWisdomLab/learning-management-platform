@@ -86,6 +86,10 @@ jobs:
         run: cargo +1.97.1 test --workspace --all-targets --locked
       - name: Run Clippy
         run: cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build public API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo +1.97.1 doc --workspace --no-deps --locked
       - name: Apply and inspect PostgreSQL migration
         env:
           PGPASSWORD: ci-only

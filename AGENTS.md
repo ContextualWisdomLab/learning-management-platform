@@ -8,3 +8,5 @@
 - Direct cross-repository database reads are prohibited; use versioned API/event contracts.
 - Production statement and branch coverage must be 100%, with complete public API documentation.
 - Realistic tests must include employee-linked, partner, customer, self-sponsored, repeated-enrollment, and multi-tenant learner journeys.
+- The executable Rust kernel must pass `cargo fmt --all -- --check`, locked workspace tests, Clippy with warnings denied, and `cargo doc` with warnings denied.
+- PostgreSQL changes must be applied to a real PostgreSQL instance in CI; tenant isolation, effective dates, migration rollback, and API retry/duplicate behavior require executable evidence.
