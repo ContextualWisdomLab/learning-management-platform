@@ -36,13 +36,14 @@ A learner is not assumed to be an employee, login account, payer, or contracting
 
 `decision_evidence_reference` stores only the external source authority, opaque snapshot/reference ID, immutable digest, observed source version, and decision-time metadata. It does **not** duplicate LRS statements, Psychometrics Commons result payloads, Studio content, or Billing provider truth.
 
-`completion_decision` has exactly one `completion_policy_revision` and one or more `decision_evidence_reference` rows through tenant-scoped foreign keys. A decision is immutable after publication; correction creates a superseding decision with an explicit relation to the prior decision.
+`completion_decision` has exactly one `learning_registration`, exactly one `completion_policy_revision`, and one or more `decision_evidence_reference` rows through tenant-scoped foreign keys. A registration may have multiple superseding decisions, but each decision is immutable after publication; correction creates a new decision with an explicit relation to the prior decision.
 
 Cardinality baseline:
 
 ```text
 completion_policy 1 ---- * completion_policy_revision
 completion_policy_revision 1 ---- * completion_decision
+learning_registration 1 ---- * completion_decision
 completion_decision 1 ---- * decision_evidence_reference
 learner_profile 1 ---- * enrollment_record
 enrollment_record 1 ---- * learning_registration

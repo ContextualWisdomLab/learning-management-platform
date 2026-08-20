@@ -95,6 +95,7 @@ CREATE TABLE completion_decision (
     completion_decision_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL,
     learner_id uuid NOT NULL,
+    learning_registration_id uuid NOT NULL,
     completion_policy_revision_id uuid NOT NULL,
     replay_fingerprint text NOT NULL,
     evaluated_at timestamptz NOT NULL,
@@ -198,6 +199,11 @@ CREATE TABLE learning_registration (
     CONSTRAINT learning_registration_enrollment_unique UNIQUE (tenant_id, enrollment_record_id),
     CONSTRAINT learning_registration_identity_unique UNIQUE (tenant_id, learning_registration_id)
 );
+
+ALTER TABLE completion_decision
+    ADD CONSTRAINT completion_decision_registration_fk
+    FOREIGN KEY (tenant_id, learning_registration_id)
+    REFERENCES learning_registration (tenant_id, learning_registration_id);
 
 ALTER TABLE learning_tenant ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_membership ENABLE ROW LEVEL SECURITY;
