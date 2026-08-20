@@ -183,7 +183,7 @@ jobs:
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["completion_policy_id"])')
           revision_id=$(curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' \
-            --data '{"revision_number":1,"required_evidence_kinds":["activity"]}' \
+            --data '{"revision_number":1,"required_evidence_kinds":["activity","assessment"]}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/completion-policies/$policy_id/revisions" \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["completion_policy_revision_id"])')
           evidence_id=$(curl --fail --silent --show-error --request POST \
@@ -191,9 +191,14 @@ jobs:
             --data '{"evidence_kind":"activity","source_authority":"lrs","source_snapshot_reference":"snapshot-ci-1","source_digest":"sha256:ci-evidence","source_version":"v1"}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/evidence" \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["decision_evidence_reference_id"])')
+          assessment_evidence_id=$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data '{"contract_version":"assessment_result_reference/v1","assessment_authority":"psychometrics-commons","external_result_reference":"assessment-result-ci-1","source_digest":"sha256:ci-assessment","source_version":"v1","assessment_result_status":"passed","observed_at":"2026-01-01T00:00:00Z"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/assessment-results" \
+            | python3 -c 'import json, sys; result=json.load(sys.stdin); assert result["assessment_result_status"] == "passed"; print(result["decision_evidence_reference_id"])')
           curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' \
-            --data "{\"completion_policy_revision_id\":\"$revision_id\",\"evidence_reference_ids\":[\"$evidence_id\"]}" \
+            --data "{\"completion_policy_revision_id\":\"$revision_id\",\"evidence_reference_ids\":[\"$evidence_id\",\"$assessment_evidence_id\"]}" \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/completion-decisions" \
             --output "$RUNNER_TEMP/lms_completion_response.json"
           python3 -c 'import json, sys; assert json.load(open(sys.argv[1]))["completion_status"] == "completed"' "$RUNNER_TEMP/lms_completion_response.json"

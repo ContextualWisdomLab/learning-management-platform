@@ -15,8 +15,8 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use lms_kernel::{
-    CompletionPolicyRevision, DecisionEvidenceReference, EvidenceKind, EvidenceSourceMetadata,
-    KernelError, evaluate_completion,
+    AssessmentResultStatus, CompletionPolicyRevision, DecisionEvidenceReference, EvidenceKind,
+    EvidenceSourceMetadata, KernelError, evaluate_completion,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -240,7 +240,19 @@ struct CreateEvidenceRequest {
     source_snapshot_reference: String,
     source_digest: String,
     source_version: String,
+    assessment_result_status: Option<String>,
     observed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateAssessmentResultRequest {
+    contract_version: String,
+    assessment_authority: String,
+    external_result_reference: String,
+    source_digest: String,
+    source_version: String,
+    assessment_result_status: String,
+    observed_at: DateTime<Utc>,
 }
 
 #[derive(Serialize)]
@@ -249,6 +261,7 @@ struct EvidenceResponse {
     tenant_id: Uuid,
     learner_id: Uuid,
     evidence_kind: String,
+    assessment_result_status: Option<String>,
     observed_at: DateTime<Utc>,
 }
 
@@ -289,6 +302,8 @@ struct CredentialResponse {
     issued_at: DateTime<Utc>,
     revoked_at: Option<DateTime<Utc>>,
 }
+
+const ASSESSMENT_RESULT_REFERENCE_CONTRACT: &str = "assessment_result_reference/v1";
 
 /// Builds the HTTP router for the learner-registration adapter.
 fn router(pool: PgPool) -> Router {
@@ -331,6 +346,10 @@ fn router(pool: PgPool) -> Router {
         .route(
             "/v1/tenants/{tenant_id}/learners/{learner_id}/registrations/{learning_registration_id}/evidence",
             post(create_evidence),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/learners/{learner_id}/registrations/{learning_registration_id}/assessment-results",
+            post(create_assessment_result),
         )
         .route(
             "/v1/tenants/{tenant_id}/learners/{learner_id}/registrations/{learning_registration_id}/completion-decisions",
@@ -893,6 +912,23 @@ fn evidence_kind_name(kind: &EvidenceKind) -> &'static str {
     }
 }
 
+fn parse_assessment_result_status(value: &str) -> Result<AssessmentResultStatus, ApiError> {
+    match value {
+        "passed" => Ok(AssessmentResultStatus::Passed),
+        "failed" => Ok(AssessmentResultStatus::Failed),
+        "inconclusive" => Ok(AssessmentResultStatus::Inconclusive),
+        _ => Err(ApiError::BadRequest("assessment result status is invalid")),
+    }
+}
+
+fn assessment_result_status_name(status: &AssessmentResultStatus) -> &'static str {
+    match status {
+        AssessmentResultStatus::Passed => "passed",
+        AssessmentResultStatus::Failed => "failed",
+        AssessmentResultStatus::Inconclusive => "inconclusive",
+    }
+}
+
 fn map_kernel_error(error: KernelError) -> ApiError {
     match error {
         KernelError::IncompleteEvidence => {
@@ -901,6 +937,15 @@ fn map_kernel_error(error: KernelError) -> ApiError {
         KernelError::BoundaryMismatch => ApiError::BadRequest("completion boundary is invalid"),
         KernelError::DuplicateEvidence => {
             ApiError::BadRequest("evidence references are duplicated")
+        }
+        KernelError::MissingAssessmentResultStatus => {
+            ApiError::BadRequest("assessment result status is required")
+        }
+        KernelError::AssessmentResultStatusNotAllowed => {
+            ApiError::BadRequest("assessment result status is only valid for assessment evidence")
+        }
+        KernelError::AssessmentResultNotPassed => {
+            ApiError::BadRequest("assessment result is not passed")
         }
         _ => ApiError::BadRequest("completion input is invalid"),
     }
@@ -999,6 +1044,48 @@ async fn create_policy_revision(
     ))
 }
 
+struct EvidenceInsertRequest<'a> {
+    tenant_id: Uuid,
+    learner_id: Uuid,
+    learning_registration_id: Uuid,
+    evidence_kind: &'a str,
+    source_metadata: &'a EvidenceSourceMetadata,
+    assessment_result_status: Option<&'a str>,
+    observed_at: DateTime<Utc>,
+}
+
+async fn insert_evidence_reference(
+    transaction: &mut Transaction<'_, Postgres>,
+    request: EvidenceInsertRequest<'_>,
+) -> Result<Uuid, ApiError> {
+    let evidence = sqlx::query(
+        "INSERT INTO decision_evidence_reference \
+         (tenant_id, learner_id, evidence_kind, source_authority, source_snapshot_reference, \
+          source_digest, source_version, assessment_result_status, observed_at) \
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9 \
+         FROM learning_registration \
+         WHERE tenant_id = $1 AND learner_id = $2 AND learning_registration_id = $10 \
+           AND registration_status IN ('registered', 'launched') \
+         RETURNING decision_evidence_reference_id",
+    )
+    .bind(request.tenant_id)
+    .bind(request.learner_id)
+    .bind(request.evidence_kind)
+    .bind(&request.source_metadata.source_authority)
+    .bind(&request.source_metadata.source_snapshot_reference)
+    .bind(&request.source_metadata.source_digest)
+    .bind(&request.source_metadata.source_version)
+    .bind(request.assessment_result_status)
+    .bind(request.observed_at)
+    .bind(request.learning_registration_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or(ApiError::BadRequest(
+        "active learning registration is required",
+    ))?;
+    Ok(evidence.try_get("decision_evidence_reference_id")?)
+}
+
 async fn create_evidence(
     State(state): State<AppState>,
     Path((tenant_id, learner_id, learning_registration_id)): Path<(Uuid, Uuid, Uuid)>,
@@ -1015,6 +1102,11 @@ async fn create_evidence(
         return Err(ApiError::BadRequest("evidence source metadata is required"));
     }
     let evidence_kind = parse_evidence_kind(&request.evidence_kind)?;
+    let assessment_result_status = request
+        .assessment_result_status
+        .as_deref()
+        .map(parse_assessment_result_status)
+        .transpose()?;
     let source_metadata = EvidenceSourceMetadata::new(
         &request.source_authority,
         &request.source_snapshot_reference,
@@ -1023,33 +1115,32 @@ async fn create_evidence(
     )
     .map_err(map_kernel_error)?;
     let observed_at = request.observed_at.unwrap_or_else(Utc::now);
-    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
-    let evidence = sqlx::query(
-        "INSERT INTO decision_evidence_reference \
-         (tenant_id, learner_id, evidence_kind, source_authority, source_snapshot_reference, \
-          source_digest, source_version, observed_at) \
-         SELECT $1, $2, $3, $4, $5, $6, $7, $8 \
-         FROM learning_registration \
-         WHERE tenant_id = $1 AND learner_id = $2 AND learning_registration_id = $9 \
-           AND registration_status IN ('registered', 'launched') \
-         RETURNING decision_evidence_reference_id",
+    DecisionEvidenceReference::new_with_assessment_status(
+        tenant_id,
+        learner_id,
+        evidence_kind.clone(),
+        source_metadata.clone(),
+        observed_at,
+        assessment_result_status,
     )
-    .bind(tenant_id)
-    .bind(learner_id)
-    .bind(&request.evidence_kind)
-    .bind(&source_metadata.source_authority)
-    .bind(&source_metadata.source_snapshot_reference)
-    .bind(&source_metadata.source_digest)
-    .bind(&source_metadata.source_version)
-    .bind(observed_at)
-    .bind(learning_registration_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or(ApiError::BadRequest(
-        "active learning registration is required",
-    ))?;
-    let decision_evidence_reference_id: Uuid =
-        evidence.try_get("decision_evidence_reference_id")?;
+    .map_err(map_kernel_error)?;
+    let assessment_result_status_name = assessment_result_status
+        .as_ref()
+        .map(|status| assessment_result_status_name(status).to_owned());
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let decision_evidence_reference_id = insert_evidence_reference(
+        &mut transaction,
+        EvidenceInsertRequest {
+            tenant_id,
+            learner_id,
+            learning_registration_id,
+            evidence_kind: evidence_kind_name(&evidence_kind),
+            source_metadata: &source_metadata,
+            assessment_result_status: assessment_result_status_name.as_deref(),
+            observed_at,
+        },
+    )
+    .await?;
     transaction.commit().await?;
 
     Ok((
@@ -1059,6 +1150,74 @@ async fn create_evidence(
             tenant_id,
             learner_id,
             evidence_kind: evidence_kind_name(&evidence_kind).to_owned(),
+            assessment_result_status: assessment_result_status_name,
+            observed_at,
+        }),
+    ))
+}
+
+async fn create_assessment_result(
+    State(state): State<AppState>,
+    Path((tenant_id, learner_id, learning_registration_id)): Path<(Uuid, Uuid, Uuid)>,
+    Json(request): Json<CreateAssessmentResultRequest>,
+) -> Result<(StatusCode, Json<EvidenceResponse>), ApiError> {
+    if tenant_id.is_nil()
+        || learner_id.is_nil()
+        || learning_registration_id.is_nil()
+        || request.contract_version != ASSESSMENT_RESULT_REFERENCE_CONTRACT
+        || request.assessment_authority.trim().is_empty()
+        || request.external_result_reference.trim().is_empty()
+        || request.source_digest.trim().is_empty()
+        || request.source_version.trim().is_empty()
+    {
+        return Err(ApiError::BadRequest(
+            "assessment result contract and source metadata are required",
+        ));
+    }
+    let assessment_result_status =
+        parse_assessment_result_status(&request.assessment_result_status)?;
+    let source_metadata = EvidenceSourceMetadata::new(
+        &request.assessment_authority,
+        &request.external_result_reference,
+        &request.source_digest,
+        &request.source_version,
+    )
+    .map_err(map_kernel_error)?;
+    let observed_at = request.observed_at;
+    DecisionEvidenceReference::new_with_assessment_status(
+        tenant_id,
+        learner_id,
+        EvidenceKind::Assessment,
+        source_metadata.clone(),
+        observed_at,
+        Some(assessment_result_status),
+    )
+    .map_err(map_kernel_error)?;
+    let status_name = assessment_result_status_name(&assessment_result_status).to_owned();
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let decision_evidence_reference_id = insert_evidence_reference(
+        &mut transaction,
+        EvidenceInsertRequest {
+            tenant_id,
+            learner_id,
+            learning_registration_id,
+            evidence_kind: evidence_kind_name(&EvidenceKind::Assessment),
+            source_metadata: &source_metadata,
+            assessment_result_status: Some(&status_name),
+            observed_at,
+        },
+    )
+    .await?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(EvidenceResponse {
+            decision_evidence_reference_id,
+            tenant_id,
+            learner_id,
+            evidence_kind: "assessment".to_owned(),
+            assessment_result_status: Some(status_name),
             observed_at,
         }),
     ))
@@ -1122,7 +1281,8 @@ async fn create_completion_decision(
     .map_err(map_kernel_error)?;
     let evidence_rows = sqlx::query(
         "SELECT decision_evidence_reference_id, evidence_kind, source_authority, \
-                source_snapshot_reference, source_digest, source_version, observed_at \
+                source_snapshot_reference, source_digest, source_version, \
+                assessment_result_status, observed_at \
          FROM decision_evidence_reference \
          WHERE tenant_id = $1 AND learner_id = $2 \
            AND decision_evidence_reference_id = ANY($3)",
@@ -1148,14 +1308,21 @@ async fn create_completion_decision(
             row.try_get::<String, _>("source_version")?,
         )
         .map_err(map_kernel_error)?;
+        let assessment_result_status_name: Option<String> =
+            row.try_get("assessment_result_status")?;
+        let assessment_result_status = assessment_result_status_name
+            .as_deref()
+            .map(parse_assessment_result_status)
+            .transpose()?;
         evidence.push(
-            DecisionEvidenceReference::from_existing(
+            DecisionEvidenceReference::from_existing_with_assessment_status(
                 tenant_id,
                 learner_id,
                 evidence_id,
                 parse_evidence_kind(&evidence_kind_name)?,
                 source_metadata,
                 row.try_get("observed_at")?,
+                assessment_result_status,
             )
             .map_err(map_kernel_error)?,
         );
