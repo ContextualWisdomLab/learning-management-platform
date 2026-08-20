@@ -8,7 +8,7 @@ use std::{
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -306,12 +306,34 @@ struct CredentialResponse {
     revoked_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Deserialize)]
+struct AuditEventQuery {
+    limit: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct AuditEventResponse {
+    audit_event_record_id: Uuid,
+    tenant_id: Uuid,
+    correlation_id: Uuid,
+    actor_authority: String,
+    actor_subject_reference: String,
+    action_name: String,
+    entity_type: String,
+    entity_id: Uuid,
+    source_authority: String,
+    source_version: String,
+    event_digest: String,
+    occurred_at: DateTime<Utc>,
+}
+
 const ASSESSMENT_RESULT_REFERENCE_CONTRACT: &str = "assessment_result_reference/v1";
 
 /// Builds the HTTP router for the learner-registration adapter.
 fn router(pool: PgPool) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/v1/tenants/{tenant_id}/audit-events", get(list_audit_events))
         .route("/v1/tenants/{tenant_id}/learners", post(create_learner))
         .route(
             "/v1/tenants/{tenant_id}/learners/{learner_id}/affiliations",
@@ -372,6 +394,59 @@ fn router(pool: PgPool) -> Router {
 async fn healthz(State(state): State<AppState>) -> Result<Json<HealthResponse>, ApiError> {
     sqlx::query("SELECT 1").execute(&state.pool).await?;
     Ok(Json(HealthResponse { status: "ok" }))
+}
+
+async fn list_audit_events(
+    State(state): State<AppState>,
+    Path(tenant_id): Path<Uuid>,
+    Query(query): Query<AuditEventQuery>,
+) -> Result<Json<Vec<AuditEventResponse>>, ApiError> {
+    if tenant_id.is_nil() {
+        return Err(ApiError::BadRequest("tenant reference is required"));
+    }
+    let limit = query.limit.unwrap_or(100);
+    if !(1..=1000).contains(&limit) {
+        return Err(ApiError::BadRequest(
+            "audit event limit must be between 1 and 1000",
+        ));
+    }
+
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let rows = sqlx::query(
+        "SELECT audit_event_record_id, tenant_id, correlation_id, actor_authority, \
+                actor_subject_reference, action_name, entity_type, entity_id, \
+                source_authority, source_version, event_digest, occurred_at \
+         FROM audit_event_record \
+         WHERE tenant_id = $1 \
+         ORDER BY occurred_at, audit_event_record_id \
+         LIMIT $2",
+    )
+    .bind(tenant_id)
+    .bind(limit)
+    .fetch_all(&mut *transaction)
+    .await?;
+    let events = rows
+        .into_iter()
+        .map(|row| {
+            Ok(AuditEventResponse {
+                audit_event_record_id: row.try_get("audit_event_record_id")?,
+                tenant_id: row.try_get("tenant_id")?,
+                correlation_id: row.try_get("correlation_id")?,
+                actor_authority: row.try_get("actor_authority")?,
+                actor_subject_reference: row.try_get("actor_subject_reference")?,
+                action_name: row.try_get("action_name")?,
+                entity_type: row.try_get("entity_type")?,
+                entity_id: row.try_get("entity_id")?,
+                source_authority: row.try_get("source_authority")?,
+                source_version: row.try_get("source_version")?,
+                event_digest: row.try_get("event_digest")?,
+                occurred_at: row.try_get("occurred_at")?,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+    transaction.commit().await?;
+
+    Ok(Json(events))
 }
 
 async fn create_learner(
