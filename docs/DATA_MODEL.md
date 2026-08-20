@@ -65,7 +65,7 @@ The executable registration path creates a `course_offering`, projects an active
 
 Completion is persisted only after the Rust policy engine evaluates a tenant-scoped registration, exact policy revision, and immutable evidence references. `completion_decision` stores the replay fingerprint and links its evidence through `completion_decision_evidence`; it does not copy the LRS or assessment payload.
 
-Credential issuance is a separate projection step: the API accepts an external authority/reference after completion, and PostgreSQL enforces the tenant, learner, registration, and decision relationship. Repeating an authority/reference is a conflict rather than a second local credential record.
+Credential issuance is a separate projection step: the API accepts an external authority/reference after completion, and PostgreSQL enforces the tenant, learner, registration, and decision relationship. Repeating an authority/reference is a conflict rather than a second local credential record. Revocation is an idempotent lifecycle transition that records `revoked_at`; the external credential authority remains responsible for the portable credential payload and final status.
 
 All authoritative facts are normalized to 3NF; repeated names, provider payloads, and external-system facts are referenced through dedicated identifiers rather than embedded denormalized copies.
 

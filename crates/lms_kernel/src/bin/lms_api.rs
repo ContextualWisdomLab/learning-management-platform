@@ -285,8 +285,9 @@ struct CredentialResponse {
     completion_decision_id: Uuid,
     credential_authority: String,
     external_credential_reference: String,
-    credential_status: &'static str,
+    credential_status: String,
     issued_at: DateTime<Utc>,
+    revoked_at: Option<DateTime<Utc>>,
 }
 
 /// Builds the HTTP router for the learner-registration adapter.
@@ -338,6 +339,10 @@ fn router(pool: PgPool) -> Router {
         .route(
             "/v1/tenants/{tenant_id}/learners/{learner_id}/registrations/{learning_registration_id}/completion-decisions/{completion_decision_id}/credentials",
             post(create_credential),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/learners/{learner_id}/registrations/{learning_registration_id}/completion-decisions/{completion_decision_id}/credentials/{credential_record_id}/revoke",
+            post(revoke_credential),
         )
         .with_state(AppState { pool })
 }
@@ -1286,8 +1291,94 @@ async fn create_credential(
             completion_decision_id,
             credential_authority: request.credential_authority,
             external_credential_reference: request.external_credential_reference,
-            credential_status: "issued",
+            credential_status: "issued".to_owned(),
             issued_at,
+            revoked_at: None,
+        }),
+    ))
+}
+
+async fn revoke_credential(
+    State(state): State<AppState>,
+    Path((
+        tenant_id,
+        learner_id,
+        learning_registration_id,
+        completion_decision_id,
+        credential_record_id,
+    )): Path<(Uuid, Uuid, Uuid, Uuid, Uuid)>,
+) -> Result<(StatusCode, Json<CredentialResponse>), ApiError> {
+    if tenant_id.is_nil()
+        || learner_id.is_nil()
+        || learning_registration_id.is_nil()
+        || completion_decision_id.is_nil()
+        || credential_record_id.is_nil()
+    {
+        return Err(ApiError::BadRequest("credential references are required"));
+    }
+
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let credential = sqlx::query(
+        "UPDATE credential_record SET credential_status = 'revoked', revoked_at = now() \
+         WHERE tenant_id = $1 AND learner_id = $2 AND learning_registration_id = $3 \
+           AND completion_decision_id = $4 AND credential_record_id = $5 \
+           AND credential_status = 'issued' \
+         RETURNING credential_record_id, tenant_id, learner_id, learning_registration_id, \
+                   completion_decision_id, credential_authority, external_credential_reference, \
+                   credential_status, issued_at, revoked_at",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(learning_registration_id)
+    .bind(completion_decision_id)
+    .bind(credential_record_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    let credential = match credential {
+        Some(credential) => credential,
+        None => sqlx::query(
+            "SELECT credential_record_id, tenant_id, learner_id, learning_registration_id, \
+                    completion_decision_id, credential_authority, external_credential_reference, \
+                    credential_status, issued_at, revoked_at \
+             FROM credential_record \
+             WHERE tenant_id = $1 AND learner_id = $2 AND learning_registration_id = $3 \
+               AND completion_decision_id = $4 AND credential_record_id = $5",
+        )
+        .bind(tenant_id)
+        .bind(learner_id)
+        .bind(learning_registration_id)
+        .bind(completion_decision_id)
+        .bind(credential_record_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(ApiError::BadRequest("credential is not in this tenant"))?,
+    };
+    let credential_record_id: Uuid = credential.try_get("credential_record_id")?;
+    let credential_tenant_id: Uuid = credential.try_get("tenant_id")?;
+    let credential_learner_id: Uuid = credential.try_get("learner_id")?;
+    let credential_registration_id: Uuid = credential.try_get("learning_registration_id")?;
+    let credential_decision_id: Uuid = credential.try_get("completion_decision_id")?;
+    let credential_authority: String = credential.try_get("credential_authority")?;
+    let external_credential_reference: String =
+        credential.try_get("external_credential_reference")?;
+    let credential_status: String = credential.try_get("credential_status")?;
+    let issued_at: DateTime<Utc> = credential.try_get("issued_at")?;
+    let revoked_at: Option<DateTime<Utc>> = credential.try_get("revoked_at")?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(CredentialResponse {
+            credential_record_id,
+            tenant_id: credential_tenant_id,
+            learner_id: credential_learner_id,
+            learning_registration_id: credential_registration_id,
+            completion_decision_id: credential_decision_id,
+            credential_authority,
+            external_credential_reference,
+            credential_status,
+            issued_at,
+            revoked_at,
         }),
     ))
 }

@@ -210,5 +210,11 @@ jobs:
             --header 'content-type: application/json' \
             --data '{"credential_authority":"open-badges","external_credential_reference":"credential-ci-1"}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/completion-decisions/$decision_id/credentials")" = '409'
+          curl --fail --silent --show-error --request POST \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/completion-decisions/$decision_id/credentials/$credential_id/revoke" \
+            --output "$RUNNER_TEMP/lms_credential_revoke_response.json"
+          python3 -c 'import json, sys; result=json.load(open(sys.argv[1])); assert result["credential_status"] == "revoked" and result["revoked_at"]' "$RUNNER_TEMP/lms_credential_revoke_response.json"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/completion-decisions/$decision_id/credentials/$credential_id/revoke")" = '200'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
-            --tuples-only --no-align --command "SELECT count(*) FROM credential_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
+            --tuples-only --no-align --command "SELECT count(*) FROM credential_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id' AND credential_status = 'revoked'")" = '1'
