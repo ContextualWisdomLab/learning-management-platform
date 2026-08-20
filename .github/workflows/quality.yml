@@ -55,3 +55,44 @@ jobs:
                       raise SystemExit(f"unresolved bootstrap marker {marker!r} in {path}")
 
           print("learning management bootstrap contract validation passed")
+
+  rust-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: lms_kernel_test
+          POSTGRES_USER: lms_kernel
+          POSTGRES_PASSWORD: ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lms_kernel -d lms_kernel_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
+      - name: Check formatting
+        run: cargo +1.97.1 fmt --all -- --check
+      - name: Run domain tests
+        run: cargo +1.97.1 test --workspace --all-targets --locked
+      - name: Run Clippy
+        run: cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
+      - name: Apply and inspect PostgreSQL migration
+        env:
+          PGPASSWORD: ci-only
+        run: |
+          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 --file migrations/0001_learning_kernel.sql
+          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'" \
+            | grep -x '8'
