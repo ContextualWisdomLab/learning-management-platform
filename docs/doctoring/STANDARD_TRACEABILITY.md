@@ -10,9 +10,9 @@ The following table is a **planned adoption profile**. Adoption does not imply i
 | LTI Assignment and Grade Services | 2.0 Final | https://www.1edtech.org/standards/lti | Grade/result integration | Planned adopt | Not evidenced |
 | LTI Names and Role Provisioning Services | 2.0 Final | https://www.1edtech.org/standards/lti | Context-scoped membership and role integration | Planned adopt | Not evidenced |
 | LTI Deep Linking | 2.0 Final | https://www.1edtech.org/standards/lti | Tool-mediated content selection | Planned adopt | Not evidenced |
-| QTI Assessment, Section, and Item | QTI 3.0 | https://www.1edtech.org/standards/qti | Assessment interchange; high-stakes administration remains delegated to Psychometrics Commons | Planned adopt | Not evidenced |
+| QTI Assessment, Section, and Item | QTI 3.0 Final; QTI 3.0.1 Assessment Test, Section, and Item artifacts | https://www.1edtech.org/standards/qti/index | Assessment interchange; high-stakes administration remains delegated to Psychometrics Commons | Planned adopt | Not evidenced |
 | CASE Service | 1.1 Final | https://standards.1edtech.org/case/ | Competency and learning-outcome interchange | Planned adopt | Not evidenced |
-| IEEE shareable competency definitions | IEEE 1484.20.3-2022 | https://standards.ieee.org/ | Cross-system competency definition mapping | Planned adopt | Not evidenced |
+| IEEE shareable competency definitions | IEEE 1484.20.3-2022 | https://standards.ieee.org/ieee/1484.20.3/10749 | Cross-system competency definition mapping | Planned adopt | Not evidenced |
 | Open Badges | 3.0 | https://www.1edtech.org/standards/open-badges | Portable individual achievements | Planned adopt | Not evidenced |
 | Comprehensive Learner Record | 2.0 | https://www.1edtech.org/standards/clr | Portable accumulated learner achievements | Planned adopt | Not evidenced |
 | ISO 29993 | 2017 | https://www.iso.org/standard/70357.html | Non-formal/external learning-service operating profile | Planned operating profile | Not evidenced |
