@@ -80,6 +80,8 @@ jobs:
           persist-credentials: false
       - name: Install pinned Rust
         run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
+      - name: Install pinned Rust components
+        run: rustup component add rustfmt clippy --toolchain 1.97.1
       - name: Check formatting
         run: cargo +1.97.1 fmt --all -- --check
       - name: Run domain tests
