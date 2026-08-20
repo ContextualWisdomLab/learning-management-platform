@@ -15,9 +15,9 @@ The first buyer-facing vertical is a Partner & Customer Academy with external le
 Product work targets `develop`. Promotion from `develop` to `main` requires all of the following on the exact candidate head:
 
 - an independent semantic review with no unresolved blocking thread;
-- `Learning Management Quality` successful;
-- organization-required `Security Scan` successful;
-- organization-required `SAST Semgrep` successful;
+- the repository's `validate` check from `.github/workflows/quality.yml` successful;
+- the central required `.github/workflows/security-scan.yml` workflow successful;
+- the central required `.github/workflows/sast-semgrep.yml` workflow successful;
 - any additional checks required by the live repository ruleset successful.
 
 A predecessor-head result, queued check, skipped required check, or stale approval is not promotion evidence. The live GitHub ruleset remains authoritative if it requires more than this repository baseline.
