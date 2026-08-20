@@ -9,7 +9,7 @@ use std::{
 use axum::{
     Json, Router,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -462,6 +462,19 @@ async fn begin_tenant_transaction(
         .execute(&mut *transaction)
         .await?;
     Ok(transaction)
+}
+
+fn request_correlation_id(headers: &HeaderMap) -> Result<Uuid, ApiError> {
+    headers
+        .get("x-correlation-id")
+        .map(|value| {
+            value
+                .to_str()
+                .ok()
+                .and_then(|value| Uuid::parse_str(value).ok())
+                .ok_or(ApiError::BadRequest("correlation ID must be a UUID"))
+        })
+        .unwrap_or_else(|| Ok(Uuid::new_v4()))
 }
 
 struct AuditEvent<'a> {
@@ -1255,6 +1268,7 @@ async fn create_evidence(
 
 async fn create_assessment_result(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((tenant_id, learner_id, learning_registration_id)): Path<(Uuid, Uuid, Uuid)>,
     Json(request): Json<CreateAssessmentResultRequest>,
 ) -> Result<(StatusCode, Json<EvidenceResponse>), ApiError> {
@@ -1292,7 +1306,7 @@ async fn create_assessment_result(
     )
     .map_err(map_kernel_error)?;
     let status_name = assessment_result_status_name(&assessment_result_status).to_owned();
-    let correlation_id = Uuid::new_v4();
+    let correlation_id = request_correlation_id(&headers)?;
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
     let (decision_evidence_reference_id, inserted) = insert_evidence_reference(
         &mut transaction,
@@ -1342,6 +1356,7 @@ async fn create_assessment_result(
 
 async fn create_completion_decision(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((tenant_id, learner_id, learning_registration_id)): Path<(Uuid, Uuid, Uuid)>,
     Json(request): Json<CreateCompletionDecisionRequest>,
 ) -> Result<(StatusCode, Json<CompletionDecisionResponse>), ApiError> {
@@ -1364,7 +1379,7 @@ async fn create_completion_decision(
         ));
     }
     let evaluated_at = request.evaluated_at.unwrap_or_else(Utc::now);
-    let correlation_id = Uuid::new_v4();
+    let correlation_id = request_correlation_id(&headers)?;
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
     let revision = sqlx::query(
         "SELECT completion_policy_id, revision_number, required_evidence_kinds \
@@ -1532,6 +1547,7 @@ async fn create_completion_decision(
 
 async fn create_credential(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((tenant_id, learner_id, learning_registration_id, completion_decision_id)): Path<(
         Uuid,
         Uuid,
@@ -1550,7 +1566,7 @@ async fn create_credential(
         return Err(ApiError::BadRequest("credential references are required"));
     }
 
-    let correlation_id = Uuid::new_v4();
+    let correlation_id = request_correlation_id(&headers)?;
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
     let credential = sqlx::query(
         "INSERT INTO credential_record \
@@ -1617,6 +1633,7 @@ async fn create_credential(
 
 async fn revoke_credential(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((
         tenant_id,
         learner_id,
@@ -1634,7 +1651,7 @@ async fn revoke_credential(
         return Err(ApiError::BadRequest("credential references are required"));
     }
 
-    let correlation_id = Uuid::new_v4();
+    let correlation_id = request_correlation_id(&headers)?;
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
     let credential = sqlx::query(
         "UPDATE credential_record SET credential_status = 'revoked', revoked_at = now() \
