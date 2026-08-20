@@ -10,3 +10,4 @@
 - Product and technical gap baseline with the first buyer journey, modular target, delivery order, and APA 7 source map.
 - Repository development rules.
 - Rust learner domain kernel, tenant-scoped PostgreSQL migration, and learner-registration API smoke path.
+- Bounded offering, external entitlement projection, enrollment, and learning registration API path on the stacked kernel branch.
