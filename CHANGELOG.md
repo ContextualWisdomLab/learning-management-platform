@@ -18,3 +18,4 @@
 - Added idempotent credential reference revocation with tenant and decision-boundary checks.
 - Added versioned assessment-result reference handoff with external outcome status and passed-only completion evaluation.
 - Added registration-bound evidence references and idempotent assessment import retries.
+- Added tenant-isolated append-only audit events with correlation, source version, and event digest for assessment import, completion publication, and credential lifecycle transitions.

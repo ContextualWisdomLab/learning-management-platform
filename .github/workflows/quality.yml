@@ -110,7 +110,7 @@ jobs:
           policy_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
-          test "$policy_count" = '15'
+          test "$policy_count" = '16'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_constraint WHERE conname = 'completion_decision_registration_fk'")" = '1'
@@ -232,3 +232,14 @@ jobs:
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/completion-decisions/$decision_id/credentials/$credential_id/revoke")" = '200'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align --command "SELECT count(*) FROM credential_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id' AND credential_status = 'revoked'")" = '1'
+          audit_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM audit_event_record WHERE tenant_id = '$tenant_id' AND event_digest <> ''")
+          test "$audit_count" = '4'
+          if psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 \
+            --command "BEGIN; SET LOCAL app.tenant_id = '$tenant_id'; UPDATE audit_event_record SET event_digest = 'tampered' WHERE tenant_id = '$tenant_id'; COMMIT;" \
+            > /dev/null 2>&1; then
+            echo 'audit events must reject mutation' >&2
+            exit 1
+          fi
