@@ -79,12 +79,14 @@ CREATE TABLE decision_evidence_reference (
     decision_evidence_reference_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL,
     learner_id uuid NOT NULL,
+    learning_registration_id uuid,
     evidence_kind text NOT NULL,
     source_authority text NOT NULL,
     source_snapshot_reference text NOT NULL,
     source_digest text NOT NULL,
     source_version text NOT NULL,
     assessment_result_status text,
+    idempotency_key text,
     observed_at timestamptz NOT NULL,
     CONSTRAINT decision_evidence_reference_membership_fk
         FOREIGN KEY (tenant_id, learner_id)
@@ -95,6 +97,11 @@ CREATE TABLE decision_evidence_reference (
         CHECK ((evidence_kind = 'assessment'
             AND assessment_result_status IN ('passed', 'failed', 'inconclusive'))
             OR (evidence_kind <> 'assessment' AND assessment_result_status IS NULL)),
+    CONSTRAINT decision_evidence_reference_idempotency_check
+        CHECK ((evidence_kind = 'assessment' AND length(btrim(idempotency_key)) > 0)
+            OR (evidence_kind <> 'assessment' AND idempotency_key IS NULL)),
+    CONSTRAINT decision_evidence_reference_source_idempotency_unique
+        UNIQUE (tenant_id, source_authority, idempotency_key),
     CONSTRAINT decision_evidence_reference_identity_unique UNIQUE (tenant_id, decision_evidence_reference_id)
 );
 
@@ -215,6 +222,14 @@ ALTER TABLE completion_decision
     ADD CONSTRAINT completion_decision_registration_fk
     FOREIGN KEY (tenant_id, learning_registration_id)
     REFERENCES learning_registration (tenant_id, learning_registration_id);
+
+ALTER TABLE decision_evidence_reference
+    ALTER COLUMN learning_registration_id SET NOT NULL;
+
+ALTER TABLE decision_evidence_reference
+    ADD CONSTRAINT decision_evidence_reference_registration_fk
+    FOREIGN KEY (tenant_id, learner_id, learning_registration_id)
+    REFERENCES learning_registration (tenant_id, learner_id, learning_registration_id);
 
 CREATE TABLE credential_record (
     credential_record_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

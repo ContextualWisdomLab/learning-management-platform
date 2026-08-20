@@ -17,3 +17,4 @@
 - Added tenant-safe credential reference issuance from a completed registration and exact completion decision.
 - Added idempotent credential reference revocation with tenant and decision-boundary checks.
 - Added versioned assessment-result reference handoff with external outcome status and passed-only completion evaluation.
+- Added registration-bound evidence references and idempotent assessment import retries.

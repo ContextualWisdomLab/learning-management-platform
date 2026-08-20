@@ -12,6 +12,7 @@
     "source_digest",
     "source_version",
     "assessment_result_status",
+    "idempotency_key",
     "observed_at"
   ],
   "properties": {
@@ -36,6 +37,10 @@
     },
     "assessment_result_status": {
       "enum": ["passed", "failed", "inconclusive"]
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
     },
     "observed_at": {
       "type": "string",

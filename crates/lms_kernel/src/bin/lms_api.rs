@@ -252,6 +252,7 @@ struct CreateAssessmentResultRequest {
     source_digest: String,
     source_version: String,
     assessment_result_status: String,
+    idempotency_key: String,
     observed_at: DateTime<Utc>,
 }
 
@@ -262,6 +263,7 @@ struct EvidenceResponse {
     learner_id: Uuid,
     evidence_kind: String,
     assessment_result_status: Option<String>,
+    idempotency_key: Option<String>,
     observed_at: DateTime<Utc>,
 }
 
@@ -1051,6 +1053,7 @@ struct EvidenceInsertRequest<'a> {
     evidence_kind: &'a str,
     source_metadata: &'a EvidenceSourceMetadata,
     assessment_result_status: Option<&'a str>,
+    idempotency_key: Option<&'a str>,
     observed_at: DateTime<Utc>,
 }
 
@@ -1060,12 +1063,14 @@ async fn insert_evidence_reference(
 ) -> Result<Uuid, ApiError> {
     let evidence = sqlx::query(
         "INSERT INTO decision_evidence_reference \
-         (tenant_id, learner_id, evidence_kind, source_authority, source_snapshot_reference, \
-          source_digest, source_version, assessment_result_status, observed_at) \
-         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9 \
+         (tenant_id, learner_id, learning_registration_id, evidence_kind, source_authority, \
+          source_snapshot_reference, source_digest, source_version, assessment_result_status, \
+          idempotency_key, observed_at) \
+         SELECT $1, $2, $11, $3, $4, $5, $6, $7, $8, $9, $10 \
          FROM learning_registration \
-         WHERE tenant_id = $1 AND learner_id = $2 AND learning_registration_id = $10 \
+         WHERE tenant_id = $1 AND learner_id = $2 AND learning_registration_id = $11 \
            AND registration_status IN ('registered', 'launched') \
+         ON CONFLICT (tenant_id, source_authority, idempotency_key) DO NOTHING \
          RETURNING decision_evidence_reference_id",
     )
     .bind(request.tenant_id)
@@ -1076,14 +1081,45 @@ async fn insert_evidence_reference(
     .bind(&request.source_metadata.source_digest)
     .bind(&request.source_metadata.source_version)
     .bind(request.assessment_result_status)
+    .bind(request.idempotency_key)
     .bind(request.observed_at)
     .bind(request.learning_registration_id)
     .fetch_optional(&mut **transaction)
+    .await?;
+    if let Some(evidence) = evidence {
+        return Ok(evidence.try_get("decision_evidence_reference_id")?);
+    }
+
+    let idempotency_key = request.idempotency_key.ok_or(ApiError::Conflict)?;
+    let existing = sqlx::query(
+        "SELECT decision_evidence_reference_id, learner_id, learning_registration_id, \
+                evidence_kind, source_snapshot_reference, source_digest, source_version, \
+                assessment_result_status \
+         FROM decision_evidence_reference \
+         WHERE tenant_id = $1 AND source_authority = $2 AND idempotency_key = $3",
+    )
+    .bind(request.tenant_id)
+    .bind(&request.source_metadata.source_authority)
+    .bind(idempotency_key)
+    .fetch_optional(&mut **transaction)
     .await?
-    .ok_or(ApiError::BadRequest(
-        "active learning registration is required",
-    ))?;
-    Ok(evidence.try_get("decision_evidence_reference_id")?)
+    .ok_or(ApiError::Conflict)?;
+    let existing_assessment_status: Option<String> =
+        existing.try_get("assessment_result_status")?;
+    let same_request = existing.try_get::<Uuid, _>("learner_id")? == request.learner_id
+        && existing.try_get::<Uuid, _>("learning_registration_id")?
+            == request.learning_registration_id
+        && existing.try_get::<String, _>("evidence_kind")? == request.evidence_kind
+        && existing.try_get::<String, _>("source_snapshot_reference")?
+            == request.source_metadata.source_snapshot_reference
+        && existing.try_get::<String, _>("source_digest")? == request.source_metadata.source_digest
+        && existing.try_get::<String, _>("source_version")?
+            == request.source_metadata.source_version
+        && existing_assessment_status.as_deref() == request.assessment_result_status;
+    if !same_request {
+        return Err(ApiError::Conflict);
+    }
+    Ok(existing.try_get("decision_evidence_reference_id")?)
 }
 
 async fn create_evidence(
@@ -1137,6 +1173,7 @@ async fn create_evidence(
             evidence_kind: evidence_kind_name(&evidence_kind),
             source_metadata: &source_metadata,
             assessment_result_status: assessment_result_status_name.as_deref(),
+            idempotency_key: None,
             observed_at,
         },
     )
@@ -1151,6 +1188,7 @@ async fn create_evidence(
             learner_id,
             evidence_kind: evidence_kind_name(&evidence_kind).to_owned(),
             assessment_result_status: assessment_result_status_name,
+            idempotency_key: None,
             observed_at,
         }),
     ))
@@ -1169,6 +1207,7 @@ async fn create_assessment_result(
         || request.external_result_reference.trim().is_empty()
         || request.source_digest.trim().is_empty()
         || request.source_version.trim().is_empty()
+        || request.idempotency_key.trim().is_empty()
     {
         return Err(ApiError::BadRequest(
             "assessment result contract and source metadata are required",
@@ -1204,6 +1243,7 @@ async fn create_assessment_result(
             evidence_kind: evidence_kind_name(&EvidenceKind::Assessment),
             source_metadata: &source_metadata,
             assessment_result_status: Some(&status_name),
+            idempotency_key: Some(&request.idempotency_key),
             observed_at,
         },
     )
@@ -1218,6 +1258,7 @@ async fn create_assessment_result(
             learner_id,
             evidence_kind: "assessment".to_owned(),
             assessment_result_status: Some(status_name),
+            idempotency_key: Some(request.idempotency_key),
             observed_at,
         }),
     ))
@@ -1285,10 +1326,12 @@ async fn create_completion_decision(
                 assessment_result_status, observed_at \
          FROM decision_evidence_reference \
          WHERE tenant_id = $1 AND learner_id = $2 \
-           AND decision_evidence_reference_id = ANY($3)",
+           AND learning_registration_id = $3 \
+           AND decision_evidence_reference_id = ANY($4)",
     )
     .bind(tenant_id)
     .bind(learner_id)
+    .bind(learning_registration_id)
     .bind(&request.evidence_reference_ids)
     .fetch_all(&mut *transaction)
     .await?;

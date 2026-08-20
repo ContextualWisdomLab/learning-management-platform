@@ -193,11 +193,18 @@ jobs:
             --data '{"evidence_kind":"activity","source_authority":"lrs","source_snapshot_reference":"snapshot-ci-1","source_digest":"sha256:ci-evidence","source_version":"v1"}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/evidence" \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["decision_evidence_reference_id"])')
-          assessment_evidence_id=$(curl --fail --silent --show-error --request POST \
+          curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' \
-            --data '{"contract_version":"assessment_result_reference/v1","assessment_authority":"psychometrics-commons","external_result_reference":"assessment-result-ci-1","source_digest":"sha256:ci-assessment","source_version":"v1","assessment_result_status":"passed","observed_at":"2026-01-01T00:00:00Z"}' \
+            --data '{"contract_version":"assessment_result_reference/v1","assessment_authority":"psychometrics-commons","external_result_reference":"assessment-result-ci-1","source_digest":"sha256:ci-assessment","source_version":"v1","assessment_result_status":"passed","idempotency_key":"assessment-ci-idempotency-1","observed_at":"2026-01-01T00:00:00Z"}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/assessment-results" \
-            | python3 -c 'import json, sys; result=json.load(sys.stdin); assert result["assessment_result_status"] == "passed"; print(result["decision_evidence_reference_id"])')
+            --output "$RUNNER_TEMP/lms_assessment_response.json"
+          assessment_evidence_id=$(python3 -c 'import json, sys; result=json.load(open(sys.argv[1])); assert result["assessment_result_status"] == "passed"; print(result["decision_evidence_reference_id"])' "$RUNNER_TEMP/lms_assessment_response.json")
+          assessment_retry_id=$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data '{"contract_version":"assessment_result_reference/v1","assessment_authority":"psychometrics-commons","external_result_reference":"assessment-result-ci-1","source_digest":"sha256:ci-assessment","source_version":"v1","assessment_result_status":"passed","idempotency_key":"assessment-ci-idempotency-1","observed_at":"2026-01-01T00:00:00Z"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/assessment-results" \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["decision_evidence_reference_id"])')
+          test "$assessment_retry_id" = "$assessment_evidence_id"
           curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' \
             --data "{\"completion_policy_revision_id\":\"$revision_id\",\"evidence_reference_ids\":[\"$evidence_id\",\"$assessment_evidence_id\"]}" \
@@ -207,6 +214,8 @@ jobs:
           decision_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["completion_decision_id"])' "$RUNNER_TEMP/lms_completion_response.json")
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align --command "SELECT count(*) FROM completion_decision WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
+          test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align --command "SELECT count(*) FROM decision_evidence_reference WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id' AND evidence_kind = 'assessment'")" = '1'
           credential_id=$(curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' \
             --data '{"credential_authority":"open-badges","external_credential_reference":"credential-ci-1"}' \
