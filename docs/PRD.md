@@ -47,8 +47,10 @@ the audit stream.
 - RLS is enabled and forced on tenant-owned tables; audit mutation is rejected.
 - Verification must use pinned Rust checks, real PostgreSQL/API evidence, and
   exact current-head CI before protected merge.
-- No production partitioning, retention purge, backup/restore, certification,
-  browser UI, or released provider client is claimed by this slice.
+- No production partitioning, retention purge, recovery certification,
+  rollback, browser UI, or released provider client is claimed by this slice.
+  A disposable backup/restore and forward-migration rehearsal is tracked as
+  operational evidence only.
 
 ## Traceability
 

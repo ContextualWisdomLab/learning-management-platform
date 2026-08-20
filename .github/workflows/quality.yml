@@ -130,6 +130,8 @@ jobs:
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align --command "SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'audit_event_record_tenant_occurred_idx'")" = '1'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align --command "SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'audit_event_record_tenant_correlation_idx'")" = '1'
+          test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_constraint WHERE conname = 'completion_decision_registration_fk'")" = '1'
           tenant_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
