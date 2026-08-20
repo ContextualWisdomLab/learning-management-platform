@@ -175,3 +175,25 @@ jobs:
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/attempts/$attempt_id/progress")" = '400'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align --command "SELECT count(*) FROM progress_projection WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
+          policy_id=$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data '{"policy_name":"Completion CI"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/completion-policies" \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["completion_policy_id"])')
+          revision_id=$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data '{"revision_number":1,"required_evidence_kinds":["activity"]}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/completion-policies/$policy_id/revisions" \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["completion_policy_revision_id"])')
+          evidence_id=$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data '{"evidence_kind":"activity","source_authority":"lrs","source_snapshot_reference":"snapshot-ci-1","source_digest":"sha256:ci-evidence","source_version":"v1"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/evidence" \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["decision_evidence_reference_id"])')
+          curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data "{\"completion_policy_revision_id\":\"$revision_id\",\"evidence_reference_ids\":[\"$evidence_id\"]}" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/completion-decisions" \
+            | python3 -c 'import json, sys; assert json.load(sys.stdin)["completion_status"] == "completed"'
+          test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align --command "SELECT count(*) FROM completion_decision WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'

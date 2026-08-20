@@ -1,6 +1,10 @@
 //! Minimal HTTP adapter for the first learner-registration slice.
 
-use std::{env, net::SocketAddr};
+use std::{
+    collections::{BTreeSet, HashSet},
+    env,
+    net::SocketAddr,
+};
 
 use axum::{
     Json, Router,
@@ -10,7 +14,12 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{DateTime, Utc};
+use lms_kernel::{
+    CompletionPolicyRevision, DecisionEvidenceReference, EvidenceKind, EvidenceSourceMetadata,
+    KernelError, evaluate_completion,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
@@ -196,6 +205,71 @@ struct ProgressResponse {
     observed_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Deserialize)]
+struct CreateCompletionPolicyRequest {
+    policy_name: String,
+}
+
+#[derive(Serialize)]
+struct CompletionPolicyResponse {
+    completion_policy_id: Uuid,
+    tenant_id: Uuid,
+    policy_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreatePolicyRevisionRequest {
+    revision_number: i32,
+    required_evidence_kinds: Vec<String>,
+    published_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize)]
+struct PolicyRevisionResponse {
+    completion_policy_revision_id: Uuid,
+    tenant_id: Uuid,
+    completion_policy_id: Uuid,
+    revision_number: i32,
+    required_evidence_kinds: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateEvidenceRequest {
+    evidence_kind: String,
+    source_authority: String,
+    source_snapshot_reference: String,
+    source_digest: String,
+    source_version: String,
+    observed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize)]
+struct EvidenceResponse {
+    decision_evidence_reference_id: Uuid,
+    tenant_id: Uuid,
+    learner_id: Uuid,
+    evidence_kind: String,
+    observed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateCompletionDecisionRequest {
+    completion_policy_revision_id: Uuid,
+    evidence_reference_ids: Vec<Uuid>,
+    evaluated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize)]
+struct CompletionDecisionResponse {
+    completion_decision_id: Uuid,
+    tenant_id: Uuid,
+    learner_id: Uuid,
+    learning_registration_id: Uuid,
+    replay_fingerprint: String,
+    evaluated_at: DateTime<Utc>,
+    completion_status: &'static str,
+}
+
 /// Builds the HTTP router for the learner-registration adapter.
 fn router(pool: PgPool) -> Router {
     Router::new()
@@ -225,6 +299,22 @@ fn router(pool: PgPool) -> Router {
         .route(
             "/v1/tenants/{tenant_id}/learners/{learner_id}/attempts/{learning_attempt_id}/progress",
             post(record_progress),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/completion-policies",
+            post(create_completion_policy),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/completion-policies/{completion_policy_id}/revisions",
+            post(create_policy_revision),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/learners/{learner_id}/registrations/{learning_registration_id}/evidence",
+            post(create_evidence),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/learners/{learner_id}/registrations/{learning_registration_id}/completion-decisions",
+            post(create_completion_decision),
         )
         .with_state(AppState { pool })
 }
@@ -752,6 +842,360 @@ async fn record_progress(
             progress_state: request.progress_state,
             progress_percent: request.progress_percent,
             observed_at,
+        }),
+    ))
+}
+
+fn parse_evidence_kind(value: &str) -> Result<EvidenceKind, ApiError> {
+    match value {
+        "activity" => Ok(EvidenceKind::Activity),
+        "assessment" => Ok(EvidenceKind::Assessment),
+        "attendance" => Ok(EvidenceKind::Attendance),
+        "entitlement" => Ok(EvidenceKind::Entitlement),
+        _ => Err(ApiError::BadRequest("evidence kind is invalid")),
+    }
+}
+
+fn evidence_kind_name(kind: &EvidenceKind) -> &'static str {
+    match kind {
+        EvidenceKind::Activity => "activity",
+        EvidenceKind::Assessment => "assessment",
+        EvidenceKind::Attendance => "attendance",
+        EvidenceKind::Entitlement => "entitlement",
+    }
+}
+
+fn map_kernel_error(error: KernelError) -> ApiError {
+    match error {
+        KernelError::IncompleteEvidence => {
+            ApiError::BadRequest("completion requirements are not satisfied")
+        }
+        KernelError::BoundaryMismatch => ApiError::BadRequest("completion boundary is invalid"),
+        KernelError::DuplicateEvidence => {
+            ApiError::BadRequest("evidence references are duplicated")
+        }
+        _ => ApiError::BadRequest("completion input is invalid"),
+    }
+}
+
+async fn create_completion_policy(
+    State(state): State<AppState>,
+    Path(tenant_id): Path<Uuid>,
+    Json(request): Json<CreateCompletionPolicyRequest>,
+) -> Result<(StatusCode, Json<CompletionPolicyResponse>), ApiError> {
+    if tenant_id.is_nil() || request.policy_name.trim().is_empty() {
+        return Err(ApiError::BadRequest("completion policy name is required"));
+    }
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let policy = sqlx::query(
+        "INSERT INTO completion_policy (tenant_id, policy_name) \
+         VALUES ($1, $2) RETURNING completion_policy_id",
+    )
+    .bind(tenant_id)
+    .bind(&request.policy_name)
+    .fetch_one(&mut *transaction)
+    .await?;
+    let completion_policy_id: Uuid = policy.try_get("completion_policy_id")?;
+    transaction.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(CompletionPolicyResponse {
+            completion_policy_id,
+            tenant_id,
+            policy_name: request.policy_name,
+        }),
+    ))
+}
+
+async fn create_policy_revision(
+    State(state): State<AppState>,
+    Path((tenant_id, completion_policy_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<CreatePolicyRevisionRequest>,
+) -> Result<(StatusCode, Json<PolicyRevisionResponse>), ApiError> {
+    if tenant_id.is_nil() || completion_policy_id.is_nil() || request.revision_number <= 0 {
+        return Err(ApiError::BadRequest(
+            "policy revision references are invalid",
+        ));
+    }
+    let mut required_evidence_kinds = BTreeSet::new();
+    for kind in &request.required_evidence_kinds {
+        if !required_evidence_kinds.insert(parse_evidence_kind(kind)?) {
+            return Err(ApiError::BadRequest("policy evidence kinds must be unique"));
+        }
+    }
+    if required_evidence_kinds.is_empty() {
+        return Err(ApiError::BadRequest("policy evidence kinds are required"));
+    }
+    CompletionPolicyRevision::new(
+        tenant_id,
+        completion_policy_id,
+        request.revision_number as u32,
+        required_evidence_kinds.clone(),
+    )
+    .map_err(map_kernel_error)?;
+    let required_json = serde_json::to_value(&required_evidence_kinds)
+        .map_err(|_| ApiError::BadRequest("policy evidence kinds are invalid"))?;
+    let published_at = request.published_at.unwrap_or_else(Utc::now);
+
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let revision = sqlx::query(
+        "INSERT INTO completion_policy_revision \
+         (tenant_id, completion_policy_id, revision_number, required_evidence_kinds, published_at) \
+         SELECT $1, $2, $3, $4, $5 \
+         FROM completion_policy \
+         WHERE tenant_id = $1 AND completion_policy_id = $2 \
+         RETURNING completion_policy_revision_id",
+    )
+    .bind(tenant_id)
+    .bind(completion_policy_id)
+    .bind(request.revision_number)
+    .bind(required_json)
+    .bind(published_at)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ApiError::BadRequest(
+        "completion policy is not in this tenant",
+    ))?;
+    let completion_policy_revision_id: Uuid = revision.try_get("completion_policy_revision_id")?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(PolicyRevisionResponse {
+            completion_policy_revision_id,
+            tenant_id,
+            completion_policy_id,
+            revision_number: request.revision_number,
+            required_evidence_kinds: request.required_evidence_kinds,
+        }),
+    ))
+}
+
+async fn create_evidence(
+    State(state): State<AppState>,
+    Path((tenant_id, learner_id, learning_registration_id)): Path<(Uuid, Uuid, Uuid)>,
+    Json(request): Json<CreateEvidenceRequest>,
+) -> Result<(StatusCode, Json<EvidenceResponse>), ApiError> {
+    if tenant_id.is_nil()
+        || learner_id.is_nil()
+        || learning_registration_id.is_nil()
+        || request.source_authority.trim().is_empty()
+        || request.source_snapshot_reference.trim().is_empty()
+        || request.source_digest.trim().is_empty()
+        || request.source_version.trim().is_empty()
+    {
+        return Err(ApiError::BadRequest("evidence source metadata is required"));
+    }
+    let evidence_kind = parse_evidence_kind(&request.evidence_kind)?;
+    let source_metadata = EvidenceSourceMetadata::new(
+        &request.source_authority,
+        &request.source_snapshot_reference,
+        &request.source_digest,
+        &request.source_version,
+    )
+    .map_err(map_kernel_error)?;
+    let observed_at = request.observed_at.unwrap_or_else(Utc::now);
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let evidence = sqlx::query(
+        "INSERT INTO decision_evidence_reference \
+         (tenant_id, learner_id, evidence_kind, source_authority, source_snapshot_reference, \
+          source_digest, source_version, observed_at) \
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8 \
+         FROM learning_registration \
+         WHERE tenant_id = $1 AND learner_id = $2 AND learning_registration_id = $9 \
+           AND registration_status IN ('registered', 'launched') \
+         RETURNING decision_evidence_reference_id",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(&request.evidence_kind)
+    .bind(&source_metadata.source_authority)
+    .bind(&source_metadata.source_snapshot_reference)
+    .bind(&source_metadata.source_digest)
+    .bind(&source_metadata.source_version)
+    .bind(observed_at)
+    .bind(learning_registration_id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ApiError::BadRequest(
+        "active learning registration is required",
+    ))?;
+    let decision_evidence_reference_id: Uuid =
+        evidence.try_get("decision_evidence_reference_id")?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(EvidenceResponse {
+            decision_evidence_reference_id,
+            tenant_id,
+            learner_id,
+            evidence_kind: evidence_kind_name(&evidence_kind).to_owned(),
+            observed_at,
+        }),
+    ))
+}
+
+async fn create_completion_decision(
+    State(state): State<AppState>,
+    Path((tenant_id, learner_id, learning_registration_id)): Path<(Uuid, Uuid, Uuid)>,
+    Json(request): Json<CreateCompletionDecisionRequest>,
+) -> Result<(StatusCode, Json<CompletionDecisionResponse>), ApiError> {
+    if tenant_id.is_nil()
+        || learner_id.is_nil()
+        || learning_registration_id.is_nil()
+        || request.completion_policy_revision_id.is_nil()
+        || request.evidence_reference_ids.is_empty()
+    {
+        return Err(ApiError::BadRequest("completion references are required"));
+    }
+    let mut seen = HashSet::new();
+    if request
+        .evidence_reference_ids
+        .iter()
+        .any(|evidence_id| evidence_id.is_nil() || !seen.insert(*evidence_id))
+    {
+        return Err(ApiError::BadRequest(
+            "evidence references must be unique and non-nil",
+        ));
+    }
+    let evaluated_at = request.evaluated_at.unwrap_or_else(Utc::now);
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let revision = sqlx::query(
+        "SELECT completion_policy_id, revision_number, required_evidence_kinds \
+         FROM completion_policy_revision \
+         WHERE tenant_id = $1 AND completion_policy_revision_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(request.completion_policy_revision_id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ApiError::BadRequest(
+        "completion policy revision is not in this tenant",
+    ))?;
+    let policy_id: Uuid = revision.try_get("completion_policy_id")?;
+    let revision_number: i32 = revision.try_get("revision_number")?;
+    let required_values: Value = revision.try_get("required_evidence_kinds")?;
+    let required_names: Vec<String> = serde_json::from_value(required_values)
+        .map_err(|_| ApiError::BadRequest("policy evidence kinds are invalid"))?;
+    let required_evidence_kinds: BTreeSet<EvidenceKind> = required_names
+        .iter()
+        .map(|kind| parse_evidence_kind(kind))
+        .collect::<Result<_, _>>()?;
+    if required_evidence_kinds.len() != required_names.len() {
+        return Err(ApiError::BadRequest("policy evidence kinds are duplicated"));
+    }
+    let policy_revision = CompletionPolicyRevision::new(
+        tenant_id,
+        policy_id,
+        revision_number as u32,
+        required_evidence_kinds,
+    )
+    .map_err(map_kernel_error)?;
+    let evidence_rows = sqlx::query(
+        "SELECT decision_evidence_reference_id, evidence_kind, source_authority, \
+                source_snapshot_reference, source_digest, source_version, observed_at \
+         FROM decision_evidence_reference \
+         WHERE tenant_id = $1 AND learner_id = $2 \
+           AND decision_evidence_reference_id = ANY($3)",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(&request.evidence_reference_ids)
+    .fetch_all(&mut *transaction)
+    .await?;
+    if evidence_rows.len() != request.evidence_reference_ids.len() {
+        return Err(ApiError::BadRequest(
+            "evidence reference is missing or foreign",
+        ));
+    }
+    let mut evidence = Vec::with_capacity(evidence_rows.len());
+    for row in evidence_rows {
+        let evidence_id: Uuid = row.try_get("decision_evidence_reference_id")?;
+        let evidence_kind_name: String = row.try_get("evidence_kind")?;
+        let source_metadata = EvidenceSourceMetadata::new(
+            row.try_get::<String, _>("source_authority")?,
+            row.try_get::<String, _>("source_snapshot_reference")?,
+            row.try_get::<String, _>("source_digest")?,
+            row.try_get::<String, _>("source_version")?,
+        )
+        .map_err(map_kernel_error)?;
+        evidence.push(
+            DecisionEvidenceReference::from_existing(
+                tenant_id,
+                learner_id,
+                evidence_id,
+                parse_evidence_kind(&evidence_kind_name)?,
+                source_metadata,
+                row.try_get("observed_at")?,
+            )
+            .map_err(map_kernel_error)?,
+        );
+    }
+    let decision = evaluate_completion(
+        tenant_id,
+        learner_id,
+        policy_revision,
+        &evidence,
+        evaluated_at,
+    )
+    .map_err(map_kernel_error)?;
+    let decision_row = sqlx::query(
+        "INSERT INTO completion_decision \
+         (completion_decision_id, tenant_id, learner_id, learning_registration_id, \
+          completion_policy_revision_id, replay_fingerprint, evaluated_at) \
+         SELECT $1, $2, $3, $4, $5, $6, $7 \
+         FROM learning_registration \
+         WHERE tenant_id = $2 AND learner_id = $3 AND learning_registration_id = $4 \
+           AND registration_status IN ('registered', 'launched', 'completed') \
+         RETURNING completion_decision_id",
+    )
+    .bind(decision.decision_id)
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(learning_registration_id)
+    .bind(request.completion_policy_revision_id)
+    .bind(&decision.replay_fingerprint)
+    .bind(evaluated_at)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ApiError::BadRequest(
+        "learning registration is not in this tenant",
+    ))?;
+    let completion_decision_id: Uuid = decision_row.try_get("completion_decision_id")?;
+    for evidence_id in &request.evidence_reference_ids {
+        sqlx::query(
+            "INSERT INTO completion_decision_evidence \
+             (completion_decision_id, decision_evidence_reference_id, tenant_id) \
+             VALUES ($1, $2, $3)",
+        )
+        .bind(completion_decision_id)
+        .bind(evidence_id)
+        .bind(tenant_id)
+        .execute(&mut *transaction)
+        .await?;
+    }
+    sqlx::query(
+        "UPDATE learning_registration SET registration_status = 'completed' \
+         WHERE tenant_id = $1 AND learner_id = $2 AND learning_registration_id = $3",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(learning_registration_id)
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(CompletionDecisionResponse {
+            completion_decision_id,
+            tenant_id,
+            learner_id,
+            learning_registration_id,
+            replay_fingerprint: decision.replay_fingerprint,
+            evaluated_at,
+            completion_status: "completed",
         }),
     ))
 }

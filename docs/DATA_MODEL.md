@@ -59,6 +59,8 @@ The executable registration path creates a `course_offering`, projects an active
 
 `learning_attempt` records a learner's launch against a registration and immutable content-release reference. `progress_projection` stores only the LRS authority, opaque activity reference, source version/digest, observed time, and a bounded progress value/state; it never stores the source activity payload. Repeated source versions are idempotent when newer or equal observations arrive, while older observations are rejected so progress cannot move backward silently.
 
+Completion is persisted only after the Rust policy engine evaluates a tenant-scoped registration, exact policy revision, and immutable evidence references. `completion_decision` stores the replay fingerprint and links its evidence through `completion_decision_evidence`; it does not copy the LRS or assessment payload.
+
 All authoritative facts are normalized to 3NF; repeated names, provider payloads, and external-system facts are referenced through dedicated identifiers rather than embedded denormalized copies.
 
 The executable schema is `migrations/0001_learning_kernel.sql`. It applies composite tenant foreign keys, effective-dated affiliation exclusion, and PostgreSQL row-level security policies. The migration intentionally does not store source payloads from Keyverse, the LRS, Psychometrics Commons, Learning Content Studio, or Billing Control Plane.

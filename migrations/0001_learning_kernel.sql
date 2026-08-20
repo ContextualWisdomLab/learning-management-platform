@@ -188,7 +188,7 @@ CREATE TABLE learning_registration (
     enrollment_record_id uuid NOT NULL,
     external_registration_reference text NOT NULL,
     registration_status text NOT NULL DEFAULT 'registered'
-        CHECK (registration_status IN ('registered', 'launched', 'closed')),
+        CHECK (registration_status IN ('registered', 'launched', 'completed', 'closed')),
     registered_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT learning_registration_membership_fk
         FOREIGN KEY (tenant_id, learner_id)

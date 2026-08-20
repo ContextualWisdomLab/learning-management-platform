@@ -13,3 +13,4 @@
 - Bounded offering, external entitlement projection, enrollment, and learning registration API path on the stacked kernel branch.
 - Effective-dated learner affiliation API coverage with PostgreSQL exclusion-conflict mapping on the next stack.
 - Added launch attempts and LRS-owned progress projections with out-of-order observation protection.
+- Added policy revision, external evidence reference, and Rust-evaluated completion decision persistence.
