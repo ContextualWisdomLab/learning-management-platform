@@ -273,6 +273,7 @@ struct CreateCompletionDecisionRequest {
     completion_policy_revision_id: Uuid,
     evidence_reference_ids: Vec<Uuid>,
     evaluated_at: Option<DateTime<Utc>>,
+    supersedes_decision_id: Option<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -281,6 +282,7 @@ struct CompletionDecisionResponse {
     tenant_id: Uuid,
     learner_id: Uuid,
     learning_registration_id: Uuid,
+    supersedes_decision_id: Option<Uuid>,
     replay_fingerprint: String,
     evaluated_at: DateTime<Utc>,
     completion_status: &'static str,
@@ -1456,6 +1458,27 @@ async fn create_completion_decision(
     let evaluated_at = request.evaluated_at.unwrap_or_else(Utc::now);
     let correlation_id = request_correlation_id(&headers)?;
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    if let Some(supersedes_decision_id) = request.supersedes_decision_id {
+        if supersedes_decision_id.is_nil() {
+            return Err(ApiError::BadRequest(
+                "superseded decision reference is invalid",
+            ));
+        }
+        sqlx::query(
+            "SELECT completion_decision_id FROM completion_decision \
+             WHERE tenant_id = $1 AND learner_id = $2 \
+               AND learning_registration_id = $3 AND completion_decision_id = $4",
+        )
+        .bind(tenant_id)
+        .bind(learner_id)
+        .bind(learning_registration_id)
+        .bind(supersedes_decision_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(ApiError::BadRequest(
+            "superseded decision is not in this registration",
+        ))?;
+    }
     let revision = sqlx::query(
         "SELECT completion_policy_id, revision_number, required_evidence_kinds \
          FROM completion_policy_revision \
@@ -1548,8 +1571,8 @@ async fn create_completion_decision(
     let decision_row = sqlx::query(
         "INSERT INTO completion_decision \
          (completion_decision_id, tenant_id, learner_id, learning_registration_id, \
-          completion_policy_revision_id, replay_fingerprint, evaluated_at) \
-         SELECT $1, $2, $3, $4, $5, $6, $7 \
+          completion_policy_revision_id, replay_fingerprint, evaluated_at, supersedes_decision_id) \
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8 \
          FROM learning_registration \
          WHERE tenant_id = $2 AND learner_id = $3 AND learning_registration_id = $4 \
            AND registration_status IN ('registered', 'launched', 'completed') \
@@ -1562,6 +1585,7 @@ async fn create_completion_decision(
     .bind(request.completion_policy_revision_id)
     .bind(&decision.replay_fingerprint)
     .bind(evaluated_at)
+    .bind(request.supersedes_decision_id)
     .fetch_optional(&mut *transaction)
     .await?
     .ok_or(ApiError::BadRequest(
@@ -1590,12 +1614,17 @@ async fn create_completion_decision(
     .execute(&mut *transaction)
     .await?;
     let source_version = format!("policy-revision/{revision_number}");
+    let action_name = if request.supersedes_decision_id.is_some() {
+        "completion_decision.corrected"
+    } else {
+        "completion_decision.published"
+    };
     record_audit_event(
         &mut transaction,
         AuditEvent {
             tenant_id,
             correlation_id,
-            action_name: "completion_decision.published",
+            action_name,
             entity_type: "completion_decision",
             entity_id: completion_decision_id,
             source_authority: "lms-policy-engine",
@@ -1613,6 +1642,7 @@ async fn create_completion_decision(
             tenant_id,
             learner_id,
             learning_registration_id,
+            supersedes_decision_id: request.supersedes_decision_id,
             replay_fingerprint: decision.replay_fingerprint,
             evaluated_at,
             completion_status: "completed",

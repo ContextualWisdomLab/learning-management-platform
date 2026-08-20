@@ -227,8 +227,17 @@ jobs:
             --output "$RUNNER_TEMP/lms_completion_response.json"
           python3 -c 'import json, sys; assert json.load(open(sys.argv[1]))["completion_status"] == "completed"' "$RUNNER_TEMP/lms_completion_response.json"
           decision_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["completion_decision_id"])' "$RUNNER_TEMP/lms_completion_response.json")
+          curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --header 'x-correlation-id: 55555555-5555-4555-8555-555555555555' \
+            --data "{\"completion_policy_revision_id\":\"$revision_id\",\"evidence_reference_ids\":[\"$evidence_id\",\"$assessment_evidence_id\"],\"supersedes_decision_id\":\"$decision_id\"}" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/completion-decisions" \
+            --output "$RUNNER_TEMP/lms_completion_correction_response.json"
+          corrected_decision_id=$(python3 -c 'import json, sys; result=json.load(open(sys.argv[1])); assert result["completion_status"] == "completed" and result["supersedes_decision_id"] == sys.argv[2]; print(result["completion_decision_id"])' "$RUNNER_TEMP/lms_completion_correction_response.json" "$decision_id")
+          test "$corrected_decision_id" != "$decision_id"
+          decision_id="$corrected_decision_id"
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
-            --tuples-only --no-align --command "SELECT count(*) FROM completion_decision WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
+            --tuples-only --no-align --command "SELECT count(*) FROM completion_decision WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '2'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align --command "SELECT count(*) FROM decision_evidence_reference WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id' AND evidence_kind = 'assessment'")" = '1'
           credential_id=$(curl --fail --silent --show-error --request POST \
@@ -255,14 +264,17 @@ jobs:
           audit_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SELECT count(*) FROM audit_event_record WHERE tenant_id = '$tenant_id' AND event_digest <> ''")
-          test "$audit_count" = '4'
+          test "$audit_count" = '5'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
-            --command "SELECT count(*) FROM audit_event_record WHERE tenant_id = '$tenant_id' AND correlation_id IN ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444')")" = '4'
+            --command "SELECT count(*) FROM audit_event_record WHERE tenant_id = '$tenant_id' AND correlation_id IN ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444', '55555555-5555-4555-8555-555555555555')")" = '5'
+          test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM audit_event_record WHERE tenant_id = '$tenant_id' AND action_name = 'completion_decision.corrected'")" = '1'
           curl --fail --silent --show-error \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/audit-events?limit=10" \
             --output "$RUNNER_TEMP/lms_audit_response.json"
-          python3 -c 'import json, sys; events=json.load(open(sys.argv[1])); assert len(events) == 4; assert all(event["event_digest"] and "external_result_reference" not in event for event in events)' "$RUNNER_TEMP/lms_audit_response.json"
+          python3 -c 'import json, sys; events=json.load(open(sys.argv[1])); assert len(events) == 5; assert all(event["event_digest"] and "external_result_reference" not in event for event in events)' "$RUNNER_TEMP/lms_audit_response.json"
           if psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --set ON_ERROR_STOP=1 \
             --command "BEGIN; SET LOCAL app.tenant_id = '$tenant_id'; UPDATE audit_event_record SET event_digest = 'tampered' WHERE tenant_id = '$tenant_id'; COMMIT;" \
