@@ -20,3 +20,4 @@
 - Added registration-bound evidence references and idempotent assessment import retries.
 - Added tenant-isolated append-only audit events with correlation, source version, and event digest for assessment import, completion publication, and credential lifecycle transitions.
 - Added optional `X-Correlation-ID` UUID propagation for audited assessment, completion, and credential operations, with generated IDs when callers omit the header.
+- Added tenant-scoped, bounded audit-event export without source payload fields.
