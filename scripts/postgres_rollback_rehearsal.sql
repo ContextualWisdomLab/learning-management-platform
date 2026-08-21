@@ -1,6 +1,10 @@
 DROP TABLE IF EXISTS _sqlx_migrations;
 DROP TABLE IF EXISTS completion_decision_evidence;
 DROP TABLE IF EXISTS completion_decision;
+DROP TABLE IF EXISTS learning_registration;
+DROP TABLE IF EXISTS enrollment_record;
+DROP TABLE IF EXISTS access_entitlement;
+DROP TABLE IF EXISTS course_offering;
 DROP TABLE IF EXISTS decision_evidence_reference;
 DROP TABLE IF EXISTS completion_policy_revision;
 DROP TABLE IF EXISTS completion_policy;
