@@ -44,14 +44,17 @@ match the predecessor.
 - A missing correlation header generates a UUID; a malformed UUID is HTTP 400.
 - Audit export accepts `limit=1..1000`; larger histories use the paired
   `after_occurred_at` and `after_audit_event_record_id` keyset cursor. A partial
-  cursor is HTTP 400.
+  cursor is HTTP 400. Each response retains its JSON array contract and adds
+  count, ordered page receipt-digest, and last-event cursor headers; the receipt
+  digest does not contain source payloads.
 
 ## Verification contract
 
 The exact-head workflow must verify the migration catalog, valid and invalid
 correction requests, predecessor linkage, decision count, correlation IDs,
-corrected audit action, bounded/keyset export, payload exclusion, RLS isolation,
-and append-only mutation rejection. Local verification additionally uses a
+corrected audit action, bounded/keyset export, receipt headers and digest
+recomputation, payload exclusion, RLS isolation, and append-only mutation
+rejection. Local verification additionally uses a
 PostgreSQL 18.4 database and a `NOSUPERUSER` application role.
 
 Operational gaps are deliberate: production-shaped partitioning and recovery,

@@ -38,6 +38,7 @@ jobs:
               Path("docs/adr/0002-postgresql-operational-evidence.md"),
               Path("docs/adr/0003-completion-correction.md"),
               Path("docs/adr/0004-audit-export-pagination.md"),
+              Path("docs/adr/0005-audit-export-operational-receipt.md"),
               Path("docs/PRD.md"),
               Path("docs/TRD.md"),
               Path("docs/UML.md"),
@@ -285,8 +286,32 @@ jobs:
             --command "SELECT count(*) FROM audit_event_record WHERE tenant_id = '$tenant_id' AND action_name = 'completion_decision.corrected'")" = '1'
           curl --fail --silent --show-error \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/audit-events?limit=10" \
+            --dump-header "$RUNNER_TEMP/lms_audit_headers.txt" \
             --output "$RUNNER_TEMP/lms_audit_response.json"
-          python3 -c 'import json, sys; events=json.load(open(sys.argv[1])); assert len(events) == 5; assert all(event["event_digest"] and "external_result_reference" not in event for event in events)' "$RUNNER_TEMP/lms_audit_response.json"
+          python3 - "$RUNNER_TEMP/lms_audit_response.json" "$RUNNER_TEMP/lms_audit_headers.txt" <<'PY'
+          import hashlib
+          import json
+          import sys
+
+          events = json.load(open(sys.argv[1], encoding="utf-8"))
+          headers = {}
+          for line in open(sys.argv[2], encoding="utf-8"):
+              if ":" in line:
+                  name, value = line.split(":", 1)
+                  headers[name.lower()] = value.strip()
+          assert len(events) == 5
+          assert all(event["event_digest"] and "external_result_reference" not in event for event in events)
+          assert headers["x-audit-export-event-count"] == str(len(events))
+          receipt = hashlib.sha256()
+          for event in events:
+              receipt.update(event["audit_event_record_id"].encode())
+              receipt.update(b"\0")
+              receipt.update(event["event_digest"].encode())
+              receipt.update(b"\0")
+          assert headers["x-audit-export-receipt-digest"] == receipt.hexdigest()
+          assert headers["x-audit-export-next-occurred-at"] == events[-1]["occurred_at"]
+          assert headers["x-audit-export-next-event-id"] == events[-1]["audit_event_record_id"]
+          PY
           audit_cursor_query=$(python3 - "$RUNNER_TEMP/lms_audit_response.json" <<'PY'
           import json
           import sys
@@ -304,6 +329,7 @@ jobs:
           )
           curl --fail --silent --show-error \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/audit-events?$audit_cursor_query" \
+            --dump-header "$RUNNER_TEMP/lms_audit_cursor_headers.txt" \
             --output "$RUNNER_TEMP/lms_audit_cursor_response.json"
           python3 - "$RUNNER_TEMP/lms_audit_response.json" "$RUNNER_TEMP/lms_audit_cursor_response.json" <<'PY'
           import json
@@ -314,6 +340,29 @@ jobs:
           assert [event["audit_event_record_id"] for event in remaining_events] == [
               event["audit_event_record_id"] for event in all_events[2:]
           ]
+          PY
+          python3 - "$RUNNER_TEMP/lms_audit_cursor_response.json" "$RUNNER_TEMP/lms_audit_cursor_headers.txt" <<'PY'
+          import hashlib
+          import json
+          import sys
+
+          events = json.load(open(sys.argv[1], encoding="utf-8"))
+          headers = {}
+          for line in open(sys.argv[2], encoding="utf-8"):
+              if ":" in line:
+                  name, value = line.split(":", 1)
+                  headers[name.lower()] = value.strip()
+          assert len(events) == 3
+          assert headers["x-audit-export-event-count"] == str(len(events))
+          receipt = hashlib.sha256()
+          for event in events:
+              receipt.update(event["audit_event_record_id"].encode())
+              receipt.update(b"\0")
+              receipt.update(event["event_digest"].encode())
+              receipt.update(b"\0")
+          assert headers["x-audit-export-receipt-digest"] == receipt.hexdigest()
+          assert headers["x-audit-export-next-occurred-at"] == events[-1]["occurred_at"]
+          assert headers["x-audit-export-next-event-id"] == events[-1]["audit_event_record_id"]
           PY
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/audit-events?after_occurred_at=2026-01-01T00:00:00Z")" = '400'
