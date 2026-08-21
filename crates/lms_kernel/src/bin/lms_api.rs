@@ -9,11 +9,11 @@ use std::{
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use lms_kernel::{
     AssessmentResultStatus, CompletionPolicyRevision, DecisionEvidenceReference, EvidenceKind,
     EvidenceSourceMetadata, KernelError, evaluate_completion,
@@ -404,7 +404,7 @@ async fn list_audit_events(
     State(state): State<AppState>,
     Path(tenant_id): Path<Uuid>,
     Query(query): Query<AuditEventQuery>,
-) -> Result<Json<Vec<AuditEventResponse>>, ApiError> {
+) -> Result<(HeaderMap, Json<Vec<AuditEventResponse>>), ApiError> {
     if tenant_id.is_nil() {
         return Err(ApiError::BadRequest("tenant reference is required"));
     }
@@ -459,7 +459,35 @@ async fn list_audit_events(
         .collect::<Result<Vec<_>, sqlx::Error>>()?;
     transaction.commit().await?;
 
-    Ok(Json(events))
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "x-audit-export-event-count",
+        HeaderValue::from_str(&events.len().to_string())
+            .expect("event count is an ASCII header value"),
+    );
+    headers.insert(
+        "x-audit-export-receipt-digest",
+        HeaderValue::from_str(&audit_export_receipt_digest(&events))
+            .expect("receipt digest is an ASCII header value"),
+    );
+    if let Some(last_event) = events.last() {
+        headers.insert(
+            "x-audit-export-next-occurred-at",
+            HeaderValue::from_str(
+                &last_event
+                    .occurred_at
+                    .to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            )
+            .expect("event timestamp is an ASCII header value"),
+        );
+        headers.insert(
+            "x-audit-export-next-event-id",
+            HeaderValue::from_str(&last_event.audit_event_record_id.to_string())
+                .expect("event ID is an ASCII header value"),
+        );
+    }
+
+    Ok((headers, Json(events)))
 }
 
 async fn create_learner(
@@ -589,6 +617,21 @@ fn audit_event_digest(event: &AuditEvent<'_>) -> String {
         event.occurred_at.to_rfc3339(),
     ] {
         hasher.update(part.as_bytes());
+        hasher.update([0_u8]);
+    }
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn audit_export_receipt_digest(events: &[AuditEventResponse]) -> String {
+    let mut hasher = Sha256::new();
+    for event in events {
+        hasher.update(event.audit_event_record_id.to_string().as_bytes());
+        hasher.update([0_u8]);
+        hasher.update(event.event_digest.as_bytes());
         hasher.update([0_u8]);
     }
     hasher
