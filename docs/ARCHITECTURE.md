@@ -23,3 +23,7 @@ These identifiers name CWL-owned boundary contracts; they are not conformance cl
 ## First vertical
 
 Partner & Customer Academy: external learner onboarding, sponsor or self entitlement, enrollment, standards-based learning activity, assessment handoff, completion-policy evaluation, and portable credential issuance.
+
+## Executable baseline
+
+The current implementation slice is `crates/lms_kernel`: Rust domain rules enforce non-employee affiliations, effective dates, tenant/learner evidence boundaries, and replay fingerprints. `crates/lms_kernel/src/bin/lms_api.rs` provides health and learner-registration endpoints backed by the migration in `migrations/0001_learning_kernel.sql`. The CI API connection uses a `NOSUPERUSER NOBYPASSRLS` role, and `scripts/postgres_rollback_rehearsal.sql` verifies the disposable migration can be removed and reapplied. This is an executable learner-registration kernel, not yet the complete Partner & Customer Academy journey. Catalog/offering, entitlement, enrollment, progress, external adapters, completion persistence, credentials, and browser E2E remain open gaps in `docs/product-technical-gap-baseline.md`.

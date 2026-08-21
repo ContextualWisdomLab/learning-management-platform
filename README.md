@@ -23,3 +23,7 @@ Product work targets `develop`. Promotion from `develop` to `main` requires all 
 A predecessor-head result, queued check, skipped required check, or stale approval is not promotion evidence. The live GitHub ruleset remains authoritative if it requires more than this repository baseline.
 
 See `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/product-technical-gap-baseline.md`, and `docs/doctoring/STANDARD_TRACEABILITY.md`.
+
+## Executable kernel
+
+The current implementation branch contains a Rust domain kernel, a PostgreSQL migration, and a small learner-registration HTTP adapter. Run the domain checks with `cargo test --workspace --all-targets --locked`; run the API with `DATABASE_URL=postgres://... cargo run --bin lms_api`. The API applies `migrations/0001_learning_kernel.sql` on startup, exposes `GET /healthz`, and accepts learner registration at `POST /v1/tenants/{tenant_id}/learners` using opaque identity references. CI connects the API as a `NOSUPERUSER NOBYPASSRLS` role and rehearses a disposable migration drop-and-reapply through `scripts/postgres_rollback_rehearsal.sql`; this is executable evidence, not a production rollback claim. External identity, content, evidence, assessment, and billing adapters remain separate follow-up contracts.

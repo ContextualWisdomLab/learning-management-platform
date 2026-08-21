@@ -55,3 +55,103 @@ jobs:
                       raise SystemExit(f"unresolved bootstrap marker {marker!r} in {path}")
 
           print("learning management bootstrap contract validation passed")
+
+  rust-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: lms_kernel_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lms_kernel_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Configure non-superuser application role
+        env:
+          PGPASSWORD: ci-only
+        run: |
+          psql --host 127.0.0.1 --username postgres --dbname postgres \
+            --set ON_ERROR_STOP=1 \
+            --command "CREATE ROLE lms_kernel LOGIN PASSWORD 'ci-only' NOSUPERUSER NOBYPASSRLS"
+          psql --host 127.0.0.1 --username postgres --dbname postgres \
+            --set ON_ERROR_STOP=1 \
+            --command "ALTER DATABASE lms_kernel_test OWNER TO lms_kernel"
+          role_flags=$(psql --host 127.0.0.1 --username postgres --dbname postgres \
+            --tuples-only --no-align \
+            --command "SELECT CASE WHEN rolsuper THEN 't' ELSE 'f' END || '|' || CASE WHEN rolbypassrls THEN 't' ELSE 'f' END FROM pg_roles WHERE rolname = 'lms_kernel'")
+          test "$role_flags" = 'f|f'
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
+      - name: Install pinned Rust components
+        run: rustup component add rustfmt clippy --toolchain 1.97.1
+      - name: Check formatting
+        run: cargo +1.97.1 fmt --all -- --check
+      - name: Run domain tests
+        run: cargo +1.97.1 test --workspace --all-targets --locked
+      - name: Run Clippy
+        run: cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build public API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo +1.97.1 doc --workspace --no-deps --locked
+      - name: Run learner registration API smoke test
+        env:
+          DATABASE_URL: postgres://lms_kernel:ci-only@127.0.0.1:5432/lms_kernel_test
+          PGPASSWORD: ci-only
+          LMS_BIND_ADDRESS: 127.0.0.1:8080
+        run: |
+          cargo +1.97.1 build --bin lms_api --locked
+          target/debug/lms_api > "$RUNNER_TEMP/lms_api.log" 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+          attempt=0
+          until curl --fail --silent http://127.0.0.1:8080/healthz > /dev/null; do
+            attempt=$((attempt + 1))
+            test "$attempt" -lt 60
+            sleep 1
+          done
+          policy_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
+          test "$policy_count" = '8'
+          tenant_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 \
+            --command "BEGIN; SET LOCAL app.tenant_id = '$tenant_id'; INSERT INTO learning_tenant (tenant_id, tenant_slug) VALUES ('$tenant_id', 'ci-tenant'); COMMIT;"
+          payload='{"identity_authority":"keyverse","external_subject_reference":"ci-subject","membership_status":"active"}'
+          curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data "$payload" \
+            --write-out '%{http_code}' \
+            --output "$RUNNER_TEMP/lms_api_response.json" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners" | grep -x '201'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' --data "$payload" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners")" = '409'
+          kill "$api_pid" 2>/dev/null || true
+          wait "$api_pid" 2>/dev/null || true
+          trap - EXIT
+          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 --file scripts/postgres_rollback_rehearsal.sql
+          table_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_class WHERE relkind = 'r' AND relname IN ('learning_tenant', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence')")
+          test "$table_count" = '0'
+          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 --file migrations/0001_learning_kernel.sql
+          policy_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
+          test "$policy_count" = '8'
