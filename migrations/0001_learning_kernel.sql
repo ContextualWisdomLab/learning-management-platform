@@ -95,6 +95,7 @@ CREATE TABLE completion_decision (
     completion_decision_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id uuid NOT NULL,
     learner_id uuid NOT NULL,
+    learning_registration_id uuid NOT NULL,
     completion_policy_revision_id uuid NOT NULL,
     replay_fingerprint text NOT NULL,
     evaluated_at timestamptz NOT NULL,
@@ -125,6 +126,85 @@ CREATE TABLE completion_decision_evidence (
         REFERENCES decision_evidence_reference (tenant_id, decision_evidence_reference_id)
 );
 
+CREATE TABLE course_offering (
+    course_offering_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL REFERENCES learning_tenant (tenant_id),
+    offering_name text NOT NULL,
+    content_release_reference text NOT NULL,
+    offering_status text NOT NULL DEFAULT 'active'
+        CHECK (offering_status IN ('active', 'retired')),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT course_offering_tenant_name_unique UNIQUE (tenant_id, offering_name),
+    CONSTRAINT course_offering_identity_unique UNIQUE (tenant_id, course_offering_id)
+);
+
+CREATE TABLE access_entitlement (
+    access_entitlement_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    learner_id uuid NOT NULL,
+    source_authority text NOT NULL,
+    external_entitlement_reference text NOT NULL,
+    source_digest text NOT NULL,
+    source_version text NOT NULL,
+    valid_from timestamptz NOT NULL,
+    valid_to timestamptz,
+    CONSTRAINT access_entitlement_membership_fk
+        FOREIGN KEY (tenant_id, learner_id)
+        REFERENCES tenant_membership (tenant_id, learner_id),
+    CONSTRAINT access_entitlement_validity_check
+        CHECK (valid_to IS NULL OR valid_to > valid_from),
+    CONSTRAINT access_entitlement_source_unique
+        UNIQUE (tenant_id, source_authority, external_entitlement_reference),
+    CONSTRAINT access_entitlement_identity_unique UNIQUE (tenant_id, access_entitlement_id)
+);
+
+CREATE TABLE enrollment_record (
+    enrollment_record_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    learner_id uuid NOT NULL,
+    course_offering_id uuid NOT NULL,
+    access_entitlement_id uuid NOT NULL,
+    enrollment_status text NOT NULL DEFAULT 'enrolled'
+        CHECK (enrollment_status IN ('enrolled', 'completed', 'cancelled')),
+    enrolled_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT enrollment_record_membership_fk
+        FOREIGN KEY (tenant_id, learner_id)
+        REFERENCES tenant_membership (tenant_id, learner_id),
+    CONSTRAINT enrollment_record_offering_fk
+        FOREIGN KEY (tenant_id, course_offering_id)
+        REFERENCES course_offering (tenant_id, course_offering_id),
+    CONSTRAINT enrollment_record_entitlement_fk
+        FOREIGN KEY (tenant_id, access_entitlement_id)
+        REFERENCES access_entitlement (tenant_id, access_entitlement_id),
+    CONSTRAINT enrollment_record_learner_offering_unique
+        UNIQUE (tenant_id, learner_id, course_offering_id),
+    CONSTRAINT enrollment_record_identity_unique UNIQUE (tenant_id, enrollment_record_id)
+);
+
+CREATE TABLE learning_registration (
+    learning_registration_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    learner_id uuid NOT NULL,
+    enrollment_record_id uuid NOT NULL,
+    external_registration_reference text NOT NULL,
+    registration_status text NOT NULL DEFAULT 'registered'
+        CHECK (registration_status IN ('registered', 'launched', 'closed')),
+    registered_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT learning_registration_membership_fk
+        FOREIGN KEY (tenant_id, learner_id)
+        REFERENCES tenant_membership (tenant_id, learner_id),
+    CONSTRAINT learning_registration_enrollment_fk
+        FOREIGN KEY (tenant_id, enrollment_record_id)
+        REFERENCES enrollment_record (tenant_id, enrollment_record_id),
+    CONSTRAINT learning_registration_enrollment_unique UNIQUE (tenant_id, enrollment_record_id),
+    CONSTRAINT learning_registration_identity_unique UNIQUE (tenant_id, learning_registration_id)
+);
+
+ALTER TABLE completion_decision
+    ADD CONSTRAINT completion_decision_registration_fk
+    FOREIGN KEY (tenant_id, learning_registration_id)
+    REFERENCES learning_registration (tenant_id, learning_registration_id);
+
 ALTER TABLE learning_tenant ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_membership ENABLE ROW LEVEL SECURITY;
 ALTER TABLE learning_affiliation ENABLE ROW LEVEL SECURITY;
@@ -133,6 +213,10 @@ ALTER TABLE completion_policy_revision ENABLE ROW LEVEL SECURITY;
 ALTER TABLE decision_evidence_reference ENABLE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision ENABLE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision_evidence ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_offering ENABLE ROW LEVEL SECURITY;
+ALTER TABLE access_entitlement ENABLE ROW LEVEL SECURITY;
+ALTER TABLE enrollment_record ENABLE ROW LEVEL SECURITY;
+ALTER TABLE learning_registration ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY learning_tenant_tenant_policy ON learning_tenant
     USING (tenant_id::text = current_setting('app.tenant_id', true));
@@ -150,6 +234,14 @@ CREATE POLICY completion_decision_tenant_policy ON completion_decision
     USING (tenant_id::text = current_setting('app.tenant_id', true));
 CREATE POLICY completion_decision_evidence_tenant_policy ON completion_decision_evidence
     USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY course_offering_tenant_policy ON course_offering
+    USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY access_entitlement_tenant_policy ON access_entitlement
+    USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY enrollment_record_tenant_policy ON enrollment_record
+    USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY learning_registration_tenant_policy ON learning_registration
+    USING (tenant_id::text = current_setting('app.tenant_id', true));
 
 -- The owning migration role must not be used by the application connection.
 ALTER TABLE learning_tenant FORCE ROW LEVEL SECURITY;
@@ -160,3 +252,7 @@ ALTER TABLE completion_policy_revision FORCE ROW LEVEL SECURITY;
 ALTER TABLE decision_evidence_reference FORCE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision FORCE ROW LEVEL SECURITY;
 ALTER TABLE completion_decision_evidence FORCE ROW LEVEL SECURITY;
+ALTER TABLE course_offering FORCE ROW LEVEL SECURITY;
+ALTER TABLE access_entitlement FORCE ROW LEVEL SECURITY;
+ALTER TABLE enrollment_record FORCE ROW LEVEL SECURITY;
+ALTER TABLE learning_registration FORCE ROW LEVEL SECURITY;

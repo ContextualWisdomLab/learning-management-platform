@@ -9,8 +9,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -29,10 +30,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, message),
-            Self::Conflict => (
-                StatusCode::CONFLICT,
-                "learner identity is already enrolled in this tenant",
-            ),
+            Self::Conflict => (StatusCode::CONFLICT, "resource already exists"),
             Self::Database(error) => {
                 eprintln!("database request failed: {error}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "database request failed")
@@ -79,11 +77,87 @@ struct LearnerResponse {
     membership_status: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct CreateOfferingRequest {
+    offering_name: String,
+    content_release_reference: String,
+}
+
+#[derive(Serialize)]
+struct OfferingResponse {
+    course_offering_id: Uuid,
+    tenant_id: Uuid,
+    offering_name: String,
+    content_release_reference: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateEntitlementRequest {
+    source_authority: String,
+    external_entitlement_reference: String,
+    source_digest: String,
+    source_version: String,
+    valid_from: Option<DateTime<Utc>>,
+    valid_to: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize)]
+struct EntitlementResponse {
+    access_entitlement_id: Uuid,
+    tenant_id: Uuid,
+    learner_id: Uuid,
+    valid_from: DateTime<Utc>,
+    valid_to: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateEnrollmentRequest {
+    course_offering_id: Uuid,
+    access_entitlement_id: Uuid,
+}
+
+#[derive(Serialize)]
+struct EnrollmentResponse {
+    enrollment_record_id: Uuid,
+    tenant_id: Uuid,
+    learner_id: Uuid,
+    course_offering_id: Uuid,
+    access_entitlement_id: Uuid,
+    enrollment_status: &'static str,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateRegistrationRequest {
+    external_registration_reference: String,
+}
+
+#[derive(Serialize)]
+struct RegistrationResponse {
+    learning_registration_id: Uuid,
+    tenant_id: Uuid,
+    learner_id: Uuid,
+    enrollment_record_id: Uuid,
+    registration_status: &'static str,
+}
+
 /// Builds the HTTP router for the learner-registration adapter.
 fn router(pool: PgPool) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/v1/tenants/{tenant_id}/learners", post(create_learner))
+        .route("/v1/tenants/{tenant_id}/offerings", post(create_offering))
+        .route(
+            "/v1/tenants/{tenant_id}/learners/{learner_id}/entitlements",
+            post(create_entitlement),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/learners/{learner_id}/enrollments",
+            post(create_enrollment),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/learners/{learner_id}/enrollments/{enrollment_record_id}/registrations",
+            post(create_registration),
+        )
         .with_state(AppState { pool })
 }
 
@@ -112,11 +186,7 @@ async fn create_learner(
         return Err(ApiError::BadRequest("membership status is invalid"));
     }
 
-    let mut transaction = state.pool.begin().await?;
-    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-        .bind(tenant_id.to_string())
-        .execute(&mut *transaction)
-        .await?;
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
 
     sqlx::query(
         "INSERT INTO login_identity_reference (identity_authority, external_subject_reference) \
@@ -170,6 +240,229 @@ async fn create_learner(
             identity_authority: request.identity_authority,
             external_subject_reference: request.external_subject_reference,
             membership_status: request.membership_status,
+        }),
+    ))
+}
+
+async fn begin_tenant_transaction(
+    pool: &PgPool,
+    tenant_id: Uuid,
+) -> Result<Transaction<'_, Postgres>, ApiError> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut *transaction)
+        .await?;
+    Ok(transaction)
+}
+
+async fn create_offering(
+    State(state): State<AppState>,
+    Path(tenant_id): Path<Uuid>,
+    Json(request): Json<CreateOfferingRequest>,
+) -> Result<(StatusCode, Json<OfferingResponse>), ApiError> {
+    if tenant_id.is_nil()
+        || request.offering_name.trim().is_empty()
+        || request.content_release_reference.trim().is_empty()
+    {
+        return Err(ApiError::BadRequest(
+            "offering and content release references are required",
+        ));
+    }
+
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let offering = sqlx::query(
+        "INSERT INTO course_offering \
+         (tenant_id, offering_name, content_release_reference) \
+         VALUES ($1, $2, $3) RETURNING course_offering_id",
+    )
+    .bind(tenant_id)
+    .bind(&request.offering_name)
+    .bind(&request.content_release_reference)
+    .fetch_one(&mut *transaction)
+    .await?;
+    let course_offering_id: Uuid = offering.try_get("course_offering_id")?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(OfferingResponse {
+            course_offering_id,
+            tenant_id,
+            offering_name: request.offering_name,
+            content_release_reference: request.content_release_reference,
+        }),
+    ))
+}
+
+async fn create_entitlement(
+    State(state): State<AppState>,
+    Path((tenant_id, learner_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<CreateEntitlementRequest>,
+) -> Result<(StatusCode, Json<EntitlementResponse>), ApiError> {
+    if tenant_id.is_nil()
+        || learner_id.is_nil()
+        || request.source_authority.trim().is_empty()
+        || request.external_entitlement_reference.trim().is_empty()
+        || request.source_digest.trim().is_empty()
+        || request.source_version.trim().is_empty()
+    {
+        return Err(ApiError::BadRequest(
+            "entitlement source metadata is required",
+        ));
+    }
+    let valid_from = request.valid_from.unwrap_or_else(Utc::now);
+    if request
+        .valid_to
+        .is_some_and(|valid_to| valid_to <= valid_from)
+    {
+        return Err(ApiError::BadRequest(
+            "entitlement validity interval is invalid",
+        ));
+    }
+
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let entitlement = sqlx::query(
+        "INSERT INTO access_entitlement \
+         (tenant_id, learner_id, source_authority, external_entitlement_reference, \
+          source_digest, source_version, valid_from, valid_to) \
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8 \
+         FROM tenant_membership \
+         WHERE tenant_id = $1 AND learner_id = $2 \
+           AND membership_status = 'active' AND valid_from <= now() \
+           AND (valid_to IS NULL OR valid_to > now()) \
+         RETURNING access_entitlement_id",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(&request.source_authority)
+    .bind(&request.external_entitlement_reference)
+    .bind(&request.source_digest)
+    .bind(&request.source_version)
+    .bind(valid_from)
+    .bind(request.valid_to)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ApiError::BadRequest("learner membership is not active"))?;
+    let access_entitlement_id: Uuid = entitlement.try_get("access_entitlement_id")?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(EntitlementResponse {
+            access_entitlement_id,
+            tenant_id,
+            learner_id,
+            valid_from,
+            valid_to: request.valid_to,
+        }),
+    ))
+}
+
+async fn create_enrollment(
+    State(state): State<AppState>,
+    Path((tenant_id, learner_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<CreateEnrollmentRequest>,
+) -> Result<(StatusCode, Json<EnrollmentResponse>), ApiError> {
+    if tenant_id.is_nil()
+        || learner_id.is_nil()
+        || request.course_offering_id.is_nil()
+        || request.access_entitlement_id.is_nil()
+    {
+        return Err(ApiError::BadRequest("enrollment references are required"));
+    }
+
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let enrollment = sqlx::query(
+        "INSERT INTO enrollment_record \
+         (tenant_id, learner_id, course_offering_id, access_entitlement_id) \
+         SELECT $1, $2, offering.course_offering_id, entitlement.access_entitlement_id \
+         FROM course_offering AS offering \
+         JOIN access_entitlement AS entitlement \
+           ON entitlement.tenant_id = offering.tenant_id \
+          AND entitlement.access_entitlement_id = $4 \
+          AND entitlement.learner_id = $2 \
+          AND entitlement.valid_from <= now() \
+          AND (entitlement.valid_to IS NULL OR entitlement.valid_to > now()) \
+         JOIN tenant_membership AS membership \
+           ON membership.tenant_id = offering.tenant_id \
+          AND membership.learner_id = $2 \
+          AND membership.membership_status = 'active' \
+          AND membership.valid_from <= now() \
+          AND (membership.valid_to IS NULL OR membership.valid_to > now()) \
+         WHERE offering.tenant_id = $1 \
+           AND offering.course_offering_id = $3 \
+           AND offering.offering_status = 'active' \
+         RETURNING enrollment_record_id",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(request.course_offering_id)
+    .bind(request.access_entitlement_id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ApiError::BadRequest(
+        "active offering, entitlement, and membership are required",
+    ))?;
+    let enrollment_record_id: Uuid = enrollment.try_get("enrollment_record_id")?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(EnrollmentResponse {
+            enrollment_record_id,
+            tenant_id,
+            learner_id,
+            course_offering_id: request.course_offering_id,
+            access_entitlement_id: request.access_entitlement_id,
+            enrollment_status: "enrolled",
+        }),
+    ))
+}
+
+async fn create_registration(
+    State(state): State<AppState>,
+    Path((tenant_id, learner_id, enrollment_record_id)): Path<(Uuid, Uuid, Uuid)>,
+    Json(request): Json<CreateRegistrationRequest>,
+) -> Result<(StatusCode, Json<RegistrationResponse>), ApiError> {
+    if tenant_id.is_nil()
+        || learner_id.is_nil()
+        || enrollment_record_id.is_nil()
+        || request.external_registration_reference.trim().is_empty()
+    {
+        return Err(ApiError::BadRequest(
+            "enrollment and registration references are required",
+        ));
+    }
+
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let registration = sqlx::query(
+        "INSERT INTO learning_registration \
+         (tenant_id, learner_id, enrollment_record_id, external_registration_reference) \
+         SELECT tenant_id, learner_id, enrollment_record_id, $4 \
+         FROM enrollment_record \
+         WHERE tenant_id = $1 AND learner_id = $2 \
+           AND enrollment_record_id = $3 AND enrollment_status = 'enrolled' \
+         RETURNING learning_registration_id",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(enrollment_record_id)
+    .bind(&request.external_registration_reference)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ApiError::BadRequest("active enrollment is required"))?;
+    let learning_registration_id: Uuid = registration.try_get("learning_registration_id")?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(RegistrationResponse {
+            learning_registration_id,
+            tenant_id,
+            learner_id,
+            enrollment_record_id,
+            registration_status: "registered",
         }),
     ))
 }

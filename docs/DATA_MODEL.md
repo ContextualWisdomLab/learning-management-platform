@@ -36,7 +36,7 @@ A learner is not assumed to be an employee, login account, payer, or contracting
 
 `decision_evidence_reference` stores only the external source authority, opaque snapshot/reference ID, immutable digest, observed source version, and an allowlisted `decision_time_metadata` object. That object is scalar-only and may contain only `decision_reason_code`, `decision_method`, `evaluated_at`, `policy_revision_reference`, and, for a correction, `correction_reason_code`; it may not contain evidence claims, credentials, LRS statements, psychometric responses, billing payloads, raw PII, or authoritative source payloads. It does **not** duplicate LRS statements, Psychometrics Commons result payloads, Studio content, or Billing provider truth.
 
-`completion_decision` references exactly one `learning_registration` through a tenant-scoped foreign key, exactly one `completion_policy_revision`, and one or more `decision_evidence_reference` rows through tenant-scoped foreign keys. A learning registration may have multiple decisions. A decision is immutable after publication; correction creates a superseding decision with an explicit relation to the prior decision.
+`completion_decision` has exactly one `learning_registration`, exactly one `completion_policy_revision`, and one or more `decision_evidence_reference` rows through tenant-scoped foreign keys. A registration may have multiple superseding decisions, but each decision is immutable after publication; correction creates a new decision with an explicit relation to the prior decision.
 
 Cardinality baseline:
 
@@ -52,7 +52,9 @@ course_offering 1 ---- * enrollment_record
 
 ## External entitlement projection
 
-`access_entitlement` is a versioned local reference/projection of an entitlement owned by the Billing Control Plane or another authorized entitlement authority. It stores the external entitlement reference, source authority, effective interval, observed version/digest, and projection status. It does not store provider payment objects or become the authoritative commercial permission record.
+`access_entitlement` is a versioned local reference/projection of an entitlement owned by the Billing Control Plane or another authorized entitlement authority. It stores the external entitlement reference, source authority, effective interval, and observed version/digest. It does not store provider payment objects or become the authoritative commercial permission record.
+
+The executable registration path creates a `course_offering`, projects an active `access_entitlement` only for an active tenant membership, creates an `enrollment_record` only when the offering and entitlement are active for the same learner, and creates one `learning_registration` for that enrollment. The migration uses tenant-scoped composite foreign keys and RLS for each relation; external billing and content payloads remain out of the database.
 
 All authoritative facts are normalized to 3NF; repeated names, provider payloads, and external-system facts are referenced through dedicated identifiers rather than embedded denormalized copies.
 
