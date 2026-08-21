@@ -64,12 +64,12 @@ jobs:
         image: postgres:18-alpine
         env:
           POSTGRES_DB: lms_kernel_test
-          POSTGRES_USER: lms_kernel
+          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ci-only
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U lms_kernel -d lms_kernel_test"
+          --health-cmd "pg_isready -U postgres -d lms_kernel_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
@@ -79,6 +79,20 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Configure non-superuser application role
+        env:
+          PGPASSWORD: ci-only
+        run: |
+          psql --host 127.0.0.1 --username postgres --dbname postgres \
+            --set ON_ERROR_STOP=1 \
+            --command "CREATE ROLE lms_kernel LOGIN PASSWORD 'ci-only' NOSUPERUSER NOBYPASSRLS"
+          psql --host 127.0.0.1 --username postgres --dbname postgres \
+            --set ON_ERROR_STOP=1 \
+            --command "ALTER DATABASE lms_kernel_test OWNER TO lms_kernel"
+          role_flags=$(psql --host 127.0.0.1 --username postgres --dbname postgres \
+            --tuples-only --no-align \
+            --command "SELECT CASE WHEN rolsuper THEN 't' ELSE 'f' END || '|' || CASE WHEN rolbypassrls THEN 't' ELSE 'f' END FROM pg_roles WHERE rolname = 'lms_kernel'")
+          test "$role_flags" = 'f|f'
       - name: Install pinned Rust
         run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
       - name: Install pinned Rust components
@@ -214,3 +228,20 @@ jobs:
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/completion-decisions/$decision_id/credentials")" = '409'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align --command "SELECT count(*) FROM credential_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
+          test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align --command "SELECT count(*) FROM enrollment_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
+          kill "$api_pid" 2>/dev/null || true
+          wait "$api_pid" 2>/dev/null || true
+          trap - EXIT
+          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 --file scripts/postgres_rollback_rehearsal.sql
+          table_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_class WHERE relkind = 'r' AND relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence', 'credential_record', 'course_offering', 'access_entitlement', 'enrollment_record', 'learning_registration', 'learning_attempt', 'progress_projection')")
+          test "$table_count" = '0'
+          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 --file migrations/0001_learning_kernel.sql
+          policy_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
+          test "$policy_count" = '15'
