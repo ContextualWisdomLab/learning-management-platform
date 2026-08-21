@@ -15,9 +15,9 @@ The first buyer-facing vertical is a Partner & Customer Academy with external le
 Product work targets `develop`. Promotion from `develop` to `main` requires all of the following on the exact candidate head:
 
 - an independent semantic review with no unresolved blocking thread;
-- `Learning Management Quality` successful;
-- organization-required `Security Scan` successful;
-- organization-required `SAST Semgrep` successful;
+- the repository's `validate` check from `.github/workflows/quality.yml` successful;
+- the central required `.github/workflows/security-scan.yml` workflow successful;
+- the central required `.github/workflows/sast-semgrep.yml` workflow successful;
 - any additional checks required by the live repository ruleset successful.
 
 A predecessor-head result, queued check, skipped required check, or stale approval is not promotion evidence. The live GitHub ruleset remains authoritative if it requires more than this repository baseline.
@@ -26,4 +26,4 @@ See `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/product-technical-gap-ba
 
 ## Executable kernel
 
-The current implementation branch contains a Rust domain kernel, a PostgreSQL migration, and a small learner-affiliation/registration/enrollment/progress/completion/credential HTTP adapter. Run the domain checks with `cargo test --workspace --all-targets --locked`; run the API with `DATABASE_URL=postgres://... cargo run --bin lms_api`. The API applies `migrations/0001_learning_kernel.sql` on startup, exposes `GET /healthz`, and supports the bounded path `learners → affiliations → offerings → entitlements → enrollments → registrations → attempts → progress projections → completion decision → credential reference`. External identity, content, evidence, assessment, and billing adapters remain separate follow-up contracts.
+The current implementation branch contains a Rust domain kernel, a PostgreSQL migration, and a small learner-affiliation/registration/enrollment/progress/completion/credential HTTP adapter. Run the domain checks with `cargo test --workspace --all-targets --locked`; run the API with `DATABASE_URL=postgres://... cargo run --bin lms_api`. The API applies `migrations/0001_learning_kernel.sql` on startup, exposes `GET /healthz`, and supports the bounded path `learners → affiliations → offerings → entitlements → enrollments → registrations → attempts → progress projections → completion decision → credential reference` using opaque identity references. CI connects the API as a `NOSUPERUSER NOBYPASSRLS` role and rehearses a disposable migration drop-and-reapply through `scripts/postgres_rollback_rehearsal.sql`; this is executable evidence, not a production rollback claim. External identity, content, evidence, assessment, and billing adapters remain separate follow-up contracts.
