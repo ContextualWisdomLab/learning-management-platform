@@ -383,6 +383,34 @@ mod tests {
     }
 
     #[test]
+    fn supports_customer_self_sponsored_and_multi_tenant_affiliations() {
+        let (_, learner_id) = ids();
+        let at = DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp");
+        let customer = LearningAffiliation::new(
+            Uuid::from_u128(10),
+            learner_id,
+            AffiliationKind::Customer,
+            at,
+            None,
+        )
+        .expect("valid customer affiliation");
+        let self_sponsored = LearningAffiliation::new(
+            Uuid::from_u128(11),
+            learner_id,
+            AffiliationKind::SelfSponsored,
+            at,
+            None,
+        )
+        .expect("valid self-sponsored affiliation");
+        assert_eq!(customer.affiliation_kind, AffiliationKind::Customer);
+        assert_eq!(
+            self_sponsored.affiliation_kind,
+            AffiliationKind::SelfSponsored
+        );
+        assert_ne!(customer.tenant_id, self_sponsored.tenant_id);
+    }
+
+    #[test]
     fn rejects_inverted_affiliation_intervals() {
         let (tenant_id, learner_id) = ids();
         let start = DateTime::from_timestamp(1_700_000_001, 0).expect("fixed timestamp");
