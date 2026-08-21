@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS _sqlx_migrations;
 DROP TABLE IF EXISTS completion_decision_evidence;
+DROP TABLE IF EXISTS credential_record;
 DROP TABLE IF EXISTS completion_decision;
 DROP TABLE IF EXISTS progress_projection;
 DROP TABLE IF EXISTS learning_attempt;

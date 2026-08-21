@@ -78,6 +78,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Configure non-superuser application role
         env:
           PGPASSWORD: ci-only
@@ -125,7 +126,7 @@ jobs:
           policy_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
-          test "$policy_count" = '14'
+          test "$policy_count" = '15'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_constraint WHERE conname = 'completion_decision_registration_fk'")" = '1'
@@ -210,9 +211,23 @@ jobs:
             --header 'content-type: application/json' \
             --data "{\"completion_policy_revision_id\":\"$revision_id\",\"evidence_reference_ids\":[\"$evidence_id\"]}" \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/completion-decisions" \
-            | python3 -c 'import json, sys; assert json.load(sys.stdin)["completion_status"] == "completed"'
+            --output "$RUNNER_TEMP/lms_completion_response.json"
+          python3 -c 'import json, sys; assert json.load(open(sys.argv[1]))["completion_status"] == "completed"' "$RUNNER_TEMP/lms_completion_response.json"
+          decision_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["completion_decision_id"])' "$RUNNER_TEMP/lms_completion_response.json")
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align --command "SELECT count(*) FROM completion_decision WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
+          credential_id=$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data '{"credential_authority":"open-badges","external_credential_reference":"credential-ci-1"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/completion-decisions/$decision_id/credentials" \
+            | python3 -c 'import json, sys; result=json.load(sys.stdin); assert result["credential_status"] == "issued"; print(result["credential_record_id"])')
+          test -n "$credential_id"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' \
+            --data '{"credential_authority":"open-badges","external_credential_reference":"credential-ci-1"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/registrations/$registration_id/completion-decisions/$decision_id/credentials")" = '409'
+          test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align --command "SELECT count(*) FROM credential_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
           test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align --command "SELECT count(*) FROM enrollment_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
           kill "$api_pid" 2>/dev/null || true
@@ -222,11 +237,11 @@ jobs:
             --set ON_ERROR_STOP=1 --file scripts/postgres_rollback_rehearsal.sql
           table_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
-            --command "SELECT count(*) FROM pg_class WHERE relkind = 'r' AND relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence', 'course_offering', 'access_entitlement', 'enrollment_record', 'learning_registration', 'learning_attempt', 'progress_projection')")
+            --command "SELECT count(*) FROM pg_class WHERE relkind = 'r' AND relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence', 'credential_record', 'course_offering', 'access_entitlement', 'enrollment_record', 'learning_registration', 'learning_attempt', 'progress_projection')")
           test "$table_count" = '0'
           psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --set ON_ERROR_STOP=1 --file migrations/0001_learning_kernel.sql
           policy_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
-          test "$policy_count" = '14'
+          test "$policy_count" = '15'

@@ -39,6 +39,8 @@ A learner is not assumed to be an employee, login account, payer, or contracting
 
 `completion_decision` has exactly one `learning_registration`, exactly one `completion_policy_revision`, and one or more `decision_evidence_reference` rows through tenant-scoped foreign keys. A registration may have multiple superseding decisions, but each decision is immutable after publication; correction creates a new decision with an explicit relation to the prior decision.
 
+`credential_record` is a tenant-scoped reference projection issued only from a completed registration and its exact completion decision. It stores the credential authority, opaque external credential reference, lifecycle status, and issue/revocation timestamps; it does not store a badge payload or become the Open Badges/CLR authority. The four-column decision foreign key prevents a credential from combining a learner, registration, and decision from different rows.
+
 Cardinality baseline:
 
 ```text
@@ -46,6 +48,8 @@ completion_policy 1 ---- * completion_policy_revision
 completion_policy_revision 1 ---- * completion_decision
 learning_registration 1 ---- * completion_decision
 completion_decision 1 ---- * decision_evidence_reference
+completion_decision 1 ---- * credential_record
+learning_registration 1 ---- * credential_record
 learner_profile 1 ---- * enrollment_record
 enrollment_record 1 ---- * learning_registration
 course_offering 1 ---- * enrollment_record
@@ -60,6 +64,8 @@ The executable registration path creates a `course_offering`, projects an active
 `learning_attempt` records a learner's launch against a registration and immutable content-release reference. `progress_projection` stores only the LRS authority, opaque activity reference, source version/digest, observed time, and a bounded progress value/state; it never stores the source activity payload. Repeated source versions are idempotent when newer or equal observations arrive, while older observations are rejected so progress cannot move backward silently.
 
 Completion is persisted only after the Rust policy engine evaluates a tenant-scoped registration, exact policy revision, and immutable evidence references. `completion_decision` stores the replay fingerprint and links its evidence through `completion_decision_evidence`; it does not copy the LRS or assessment payload.
+
+Credential issuance is a separate projection step: the API accepts an external authority/reference after completion, and PostgreSQL enforces the tenant, learner, registration, and decision relationship. Repeating an authority/reference is a conflict rather than a second local credential record.
 
 All authoritative facts are normalized to 3NF; repeated names, provider payloads, and external-system facts are referenced through dedicated identifiers rather than embedded denormalized copies.
 
