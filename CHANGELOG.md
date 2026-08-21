@@ -17,4 +17,5 @@
 - Added launch attempts and LRS-owned progress projections with out-of-order observation protection.
 - Added policy revision, external evidence reference, and Rust-evaluated completion decision persistence.
 - Added tenant-safe credential reference issuance from a completed registration and exact completion decision.
+- Added idempotent credential reference revocation with tenant and decision-boundary checks.
 - Added non-superuser/NOBYPASSRLS CI application-role verification, customer/self-sponsored multi-tenant affiliation coverage, and disposable migration rollback/reapply rehearsal.
