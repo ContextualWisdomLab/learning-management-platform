@@ -176,6 +176,29 @@ impl DecisionEvidenceReference {
             observed_at,
         })
     }
+
+    /// Rehydrates an evidence reference with its stable database identifier.
+    pub fn from_existing(
+        tenant_id: Uuid,
+        learner_id: Uuid,
+        evidence_id: Uuid,
+        evidence_kind: EvidenceKind,
+        source_metadata: EvidenceSourceMetadata,
+        observed_at: DateTime<Utc>,
+    ) -> Result<Self, KernelError> {
+        if evidence_id.is_nil() {
+            return Err(KernelError::NilIdentifier);
+        }
+        let mut reference = Self::new(
+            tenant_id,
+            learner_id,
+            evidence_kind,
+            source_metadata,
+            observed_at,
+        )?;
+        reference.evidence_id = evidence_id;
+        Ok(reference)
+    }
 }
 
 /// An immutable revision of a completion policy.
@@ -470,6 +493,36 @@ mod tests {
         assert_eq!(
             evaluate_completion(tenant_id, learner_id, policy, &[foreign], at),
             Err(KernelError::BoundaryMismatch)
+        );
+    }
+
+    #[test]
+    fn rehydrates_existing_evidence_identity() {
+        let (tenant_id, learner_id) = ids();
+        let evidence_id = Uuid::from_u128(42);
+        let observed_at = DateTime::from_timestamp(1_700_000_003, 0).expect("fixed timestamp");
+        let reference = DecisionEvidenceReference::from_existing(
+            tenant_id,
+            learner_id,
+            evidence_id,
+            EvidenceKind::Activity,
+            EvidenceSourceMetadata::new("learning_record_store", "snapshot-42", "digest-42", "v1")
+                .expect("valid source metadata"),
+            observed_at,
+        )
+        .expect("valid existing evidence");
+        assert_eq!(reference.evidence_id, evidence_id);
+        assert_eq!(reference.observed_at, observed_at);
+        assert_eq!(
+            DecisionEvidenceReference::from_existing(
+                tenant_id,
+                learner_id,
+                Uuid::nil(),
+                EvidenceKind::Activity,
+                reference.source_metadata,
+                observed_at,
+            ),
+            Err(KernelError::NilIdentifier)
         );
     }
 }
