@@ -144,6 +144,15 @@ jobs:
             --header 'content-type: application/json' --data "$payload" \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners")" = '409'
           learner_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["learner_id"])' "$RUNNER_TEMP/lms_api_response.json")
+          affiliation_id=$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' \
+            --data '{"affiliation_kind":"partner"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/affiliations" \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["learning_affiliation_id"])')
+          test -n "$affiliation_id"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' --data '{"affiliation_kind":"partner"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/affiliations")" = '409'
           offering_id=$(curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' \
             --data '{"offering_name":"Partner Academy Basics","content_release_reference":"content-release/v1/partner-basics"}' \
