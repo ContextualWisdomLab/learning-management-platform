@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Clarify the bootstrap evidence metadata allowlist, registration-to-decision cardinality, and exact repository validation check for PR #1.
+
 ### Added
 
 - Initial LMS authority and integration boundaries.
