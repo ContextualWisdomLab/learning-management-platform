@@ -1,0 +1,17 @@
+DROP TABLE IF EXISTS _sqlx_migrations;
+DROP TABLE IF EXISTS completion_decision_evidence;
+DROP TABLE IF EXISTS completion_decision;
+DROP TABLE IF EXISTS learning_registration;
+DROP TABLE IF EXISTS enrollment_record;
+DROP TABLE IF EXISTS access_entitlement;
+DROP TABLE IF EXISTS course_offering;
+DROP TABLE IF EXISTS decision_evidence_reference;
+DROP TABLE IF EXISTS completion_policy_revision;
+DROP TABLE IF EXISTS completion_policy;
+DROP TABLE IF EXISTS learning_affiliation;
+DROP TABLE IF EXISTS tenant_membership;
+DROP TABLE IF EXISTS learner_profile;
+DROP TABLE IF EXISTS login_identity_reference;
+DROP TABLE IF EXISTS learning_tenant;
+DROP EXTENSION IF EXISTS pgcrypto;
+DROP EXTENSION IF EXISTS btree_gist;

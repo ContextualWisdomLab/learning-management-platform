@@ -34,7 +34,7 @@ A learner is not assumed to be an employee, login account, payer, or contracting
 
 `completion_policy` owns the stable policy identity. `completion_policy_revision` owns immutable revision content and has a many-to-one relationship to `completion_policy`. The pair `(tenant_id, completion_policy_id, revision_number)` is unique, and an accepted revision is never updated in place.
 
-`decision_evidence_reference` stores only the external source authority, opaque snapshot/reference ID, immutable digest, observed source version, and decision-time metadata. It does **not** duplicate LRS statements, Psychometrics Commons result payloads, Studio content, or Billing provider truth.
+`decision_evidence_reference` stores only the external source authority, opaque snapshot/reference ID, immutable digest, observed source version, and an allowlisted `decision_time_metadata` object. That object is scalar-only and may contain only `decision_reason_code`, `decision_method`, `evaluated_at`, `policy_revision_reference`, and, for a correction, `correction_reason_code`; it may not contain evidence claims, credentials, LRS statements, psychometric responses, billing payloads, raw PII, or authoritative source payloads. It does **not** duplicate LRS statements, Psychometrics Commons result payloads, Studio content, or Billing provider truth.
 
 `completion_decision` has exactly one `learning_registration`, exactly one `completion_policy_revision`, and one or more `decision_evidence_reference` rows through tenant-scoped foreign keys. A registration may have multiple superseding decisions, but each decision is immutable after publication; correction creates a new decision with an explicit relation to the prior decision.
 
