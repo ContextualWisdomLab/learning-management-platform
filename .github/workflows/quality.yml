@@ -64,12 +64,12 @@ jobs:
         image: postgres:18-alpine
         env:
           POSTGRES_DB: lms_kernel_test
-          POSTGRES_USER: lms_kernel
+          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ci-only
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U lms_kernel -d lms_kernel_test"
+          --health-cmd "pg_isready -U postgres -d lms_kernel_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
@@ -78,6 +78,20 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Configure non-superuser application role
+        env:
+          PGPASSWORD: ci-only
+        run: |
+          psql --host 127.0.0.1 --username postgres --dbname postgres \
+            --set ON_ERROR_STOP=1 \
+            --command "CREATE ROLE lms_kernel LOGIN PASSWORD 'ci-only' NOSUPERUSER NOBYPASSRLS"
+          psql --host 127.0.0.1 --username postgres --dbname postgres \
+            --set ON_ERROR_STOP=1 \
+            --command "ALTER DATABASE lms_kernel_test OWNER TO lms_kernel"
+          role_flags=$(psql --host 127.0.0.1 --username postgres --dbname postgres \
+            --tuples-only --no-align \
+            --command "SELECT CASE WHEN rolsuper THEN 't' ELSE 'f' END || '|' || CASE WHEN rolbypassrls THEN 't' ELSE 'f' END FROM pg_roles WHERE rolname = 'lms_kernel'")
+          test "$role_flags" = 'f|f'
       - name: Install pinned Rust
         run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
       - name: Install pinned Rust components
@@ -126,3 +140,18 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
             --header 'content-type: application/json' --data "$payload" \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners")" = '409'
+          kill "$api_pid" 2>/dev/null || true
+          wait "$api_pid" 2>/dev/null || true
+          trap - EXIT
+          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 --file scripts/postgres_rollback_rehearsal.sql
+          table_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_class WHERE relkind = 'r' AND relname IN ('learning_tenant', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence')")
+          test "$table_count" = '0'
+          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 --file migrations/0001_learning_kernel.sql
+          policy_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
+          test "$policy_count" = '8'
