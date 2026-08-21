@@ -159,6 +159,43 @@ struct RegistrationResponse {
     registration_status: &'static str,
 }
 
+#[derive(Debug, Deserialize)]
+struct CreateAttemptRequest {
+    external_attempt_reference: String,
+    content_release_reference: String,
+}
+
+#[derive(Serialize)]
+struct AttemptResponse {
+    learning_attempt_id: Uuid,
+    tenant_id: Uuid,
+    learner_id: Uuid,
+    learning_registration_id: Uuid,
+    attempt_status: &'static str,
+}
+
+#[derive(Debug, Deserialize)]
+struct RecordProgressRequest {
+    source_authority: String,
+    external_activity_reference: String,
+    source_version: String,
+    source_digest: String,
+    progress_state: String,
+    progress_percent: f64,
+    observed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize)]
+struct ProgressResponse {
+    progress_projection_id: Uuid,
+    tenant_id: Uuid,
+    learner_id: Uuid,
+    learning_attempt_id: Uuid,
+    progress_state: String,
+    progress_percent: f64,
+    observed_at: DateTime<Utc>,
+}
+
 /// Builds the HTTP router for the learner-registration adapter.
 fn router(pool: PgPool) -> Router {
     Router::new()
@@ -180,6 +217,14 @@ fn router(pool: PgPool) -> Router {
         .route(
             "/v1/tenants/{tenant_id}/learners/{learner_id}/enrollments/{enrollment_record_id}/registrations",
             post(create_registration),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/learners/{learner_id}/registrations/{learning_registration_id}/attempts",
+            post(create_attempt),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/learners/{learner_id}/attempts/{learning_attempt_id}/progress",
+            post(record_progress),
         )
         .with_state(AppState { pool })
 }
@@ -554,6 +599,159 @@ async fn create_registration(
             learner_id,
             enrollment_record_id,
             registration_status: "registered",
+        }),
+    ))
+}
+
+async fn create_attempt(
+    State(state): State<AppState>,
+    Path((tenant_id, learner_id, learning_registration_id)): Path<(Uuid, Uuid, Uuid)>,
+    Json(request): Json<CreateAttemptRequest>,
+) -> Result<(StatusCode, Json<AttemptResponse>), ApiError> {
+    if tenant_id.is_nil()
+        || learner_id.is_nil()
+        || learning_registration_id.is_nil()
+        || request.external_attempt_reference.trim().is_empty()
+        || request.content_release_reference.trim().is_empty()
+    {
+        return Err(ApiError::BadRequest("attempt references are required"));
+    }
+
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let attempt = sqlx::query(
+        "INSERT INTO learning_attempt \
+         (tenant_id, learner_id, learning_registration_id, external_attempt_reference, \
+          content_release_reference) \
+         SELECT $1, $2, $3, $4, $5 \
+         FROM learning_registration \
+         WHERE tenant_id = $1 AND learner_id = $2 \
+           AND learning_registration_id = $3 \
+           AND registration_status IN ('registered', 'launched') \
+         RETURNING learning_attempt_id",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(learning_registration_id)
+    .bind(&request.external_attempt_reference)
+    .bind(&request.content_release_reference)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ApiError::BadRequest(
+        "active learning registration is required",
+    ))?;
+    let learning_attempt_id: Uuid = attempt.try_get("learning_attempt_id")?;
+    sqlx::query(
+        "UPDATE learning_registration SET registration_status = 'launched' \
+         WHERE tenant_id = $1 AND learner_id = $2 AND learning_registration_id = $3",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(learning_registration_id)
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(AttemptResponse {
+            learning_attempt_id,
+            tenant_id,
+            learner_id,
+            learning_registration_id,
+            attempt_status: "launched",
+        }),
+    ))
+}
+
+async fn record_progress(
+    State(state): State<AppState>,
+    Path((tenant_id, learner_id, learning_attempt_id)): Path<(Uuid, Uuid, Uuid)>,
+    Json(request): Json<RecordProgressRequest>,
+) -> Result<(StatusCode, Json<ProgressResponse>), ApiError> {
+    if tenant_id.is_nil()
+        || learner_id.is_nil()
+        || learning_attempt_id.is_nil()
+        || request.source_authority.trim().is_empty()
+        || request.external_activity_reference.trim().is_empty()
+        || request.source_version.trim().is_empty()
+        || request.source_digest.trim().is_empty()
+    {
+        return Err(ApiError::BadRequest("progress source metadata is required"));
+    }
+    if !matches!(
+        request.progress_state.as_str(),
+        "not_started" | "in_progress" | "completed"
+    ) || !request.progress_percent.is_finite()
+        || !(0.0..=100.0).contains(&request.progress_percent)
+    {
+        return Err(ApiError::BadRequest("progress value is invalid"));
+    }
+    let observed_at = request.observed_at.unwrap_or_else(Utc::now);
+
+    let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
+    let projection = sqlx::query(
+        "INSERT INTO progress_projection \
+         (tenant_id, learner_id, learning_attempt_id, source_authority, \
+          external_activity_reference, source_version, source_digest, progress_state, \
+          progress_percent, observed_at) \
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 \
+         FROM learning_attempt \
+         WHERE tenant_id = $1 AND learner_id = $2 AND learning_attempt_id = $3 \
+           AND attempt_status IN ('launched', 'active') \
+         ON CONFLICT (tenant_id, learning_attempt_id, source_authority, \
+                      external_activity_reference, source_version) DO UPDATE \
+         SET source_digest = EXCLUDED.source_digest, \
+             progress_state = EXCLUDED.progress_state, \
+             progress_percent = EXCLUDED.progress_percent, \
+             observed_at = EXCLUDED.observed_at, \
+             recorded_at = now() \
+         WHERE progress_projection.observed_at <= EXCLUDED.observed_at \
+         RETURNING progress_projection_id",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(learning_attempt_id)
+    .bind(&request.source_authority)
+    .bind(&request.external_activity_reference)
+    .bind(&request.source_version)
+    .bind(&request.source_digest)
+    .bind(&request.progress_state)
+    .bind(request.progress_percent)
+    .bind(observed_at)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ApiError::BadRequest(
+        "active learning attempt or newer progress observation is required",
+    ))?;
+    let progress_projection_id: Uuid = projection.try_get("progress_projection_id")?;
+    let next_attempt_status = if request.progress_state == "completed" {
+        "completed"
+    } else {
+        "active"
+    };
+    sqlx::query(
+        "UPDATE learning_attempt SET attempt_status = $4, \
+         closed_at = CASE WHEN $4 = 'completed' THEN COALESCE(closed_at, now()) ELSE NULL END \
+         WHERE tenant_id = $1 AND learner_id = $2 AND learning_attempt_id = $3",
+    )
+    .bind(tenant_id)
+    .bind(learner_id)
+    .bind(learning_attempt_id)
+    .bind(next_attempt_status)
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(ProgressResponse {
+            progress_projection_id,
+            tenant_id,
+            learner_id,
+            learning_attempt_id,
+            progress_state: request.progress_state,
+            progress_percent: request.progress_percent,
+            observed_at,
         }),
     ))
 }

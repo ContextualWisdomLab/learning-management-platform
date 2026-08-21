@@ -197,6 +197,8 @@ CREATE TABLE learning_registration (
         FOREIGN KEY (tenant_id, enrollment_record_id)
         REFERENCES enrollment_record (tenant_id, enrollment_record_id),
     CONSTRAINT learning_registration_enrollment_unique UNIQUE (tenant_id, enrollment_record_id),
+    CONSTRAINT learning_registration_learner_identity_unique
+        UNIQUE (tenant_id, learner_id, learning_registration_id),
     CONSTRAINT learning_registration_identity_unique UNIQUE (tenant_id, learning_registration_id)
 );
 
@@ -204,6 +206,63 @@ ALTER TABLE completion_decision
     ADD CONSTRAINT completion_decision_registration_fk
     FOREIGN KEY (tenant_id, learning_registration_id)
     REFERENCES learning_registration (tenant_id, learning_registration_id);
+
+CREATE TABLE learning_attempt (
+    learning_attempt_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    learner_id uuid NOT NULL,
+    learning_registration_id uuid NOT NULL,
+    external_attempt_reference text NOT NULL,
+    content_release_reference text NOT NULL,
+    attempt_status text NOT NULL DEFAULT 'launched'
+        CHECK (attempt_status IN ('launched', 'active', 'completed', 'abandoned')),
+    launched_at timestamptz NOT NULL DEFAULT now(),
+    closed_at timestamptz,
+    CONSTRAINT learning_attempt_membership_fk
+        FOREIGN KEY (tenant_id, learner_id)
+        REFERENCES tenant_membership (tenant_id, learner_id),
+    CONSTRAINT learning_attempt_registration_fk
+        FOREIGN KEY (tenant_id, learner_id, learning_registration_id)
+        REFERENCES learning_registration (tenant_id, learner_id, learning_registration_id),
+    CONSTRAINT learning_attempt_reference_check
+        CHECK (length(btrim(external_attempt_reference)) > 0
+            AND length(btrim(content_release_reference)) > 0),
+    CONSTRAINT learning_attempt_closed_time_check
+        CHECK (closed_at IS NULL OR closed_at >= launched_at),
+    CONSTRAINT learning_attempt_registration_reference_unique
+        UNIQUE (tenant_id, learning_registration_id, external_attempt_reference),
+    CONSTRAINT learning_attempt_learner_identity_unique
+        UNIQUE (tenant_id, learner_id, learning_attempt_id),
+    CONSTRAINT learning_attempt_identity_unique UNIQUE (tenant_id, learning_attempt_id)
+);
+
+CREATE TABLE progress_projection (
+    progress_projection_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id uuid NOT NULL,
+    learner_id uuid NOT NULL,
+    learning_attempt_id uuid NOT NULL,
+    source_authority text NOT NULL,
+    external_activity_reference text NOT NULL,
+    source_version text NOT NULL,
+    source_digest text NOT NULL,
+    progress_state text NOT NULL
+        CHECK (progress_state IN ('not_started', 'in_progress', 'completed')),
+    progress_percent double precision NOT NULL CHECK (progress_percent >= 0 AND progress_percent <= 100),
+    observed_at timestamptz NOT NULL,
+    recorded_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT progress_projection_attempt_fk
+        FOREIGN KEY (tenant_id, learner_id, learning_attempt_id)
+        REFERENCES learning_attempt (tenant_id, learner_id, learning_attempt_id),
+    CONSTRAINT progress_projection_source_check
+        CHECK (length(btrim(source_authority)) > 0
+            AND length(btrim(external_activity_reference)) > 0
+            AND length(btrim(source_version)) > 0
+            AND length(btrim(source_digest)) > 0),
+    CONSTRAINT progress_projection_source_unique
+        UNIQUE (tenant_id, learning_attempt_id, source_authority,
+                external_activity_reference, source_version),
+    CONSTRAINT progress_projection_identity_unique UNIQUE (tenant_id, progress_projection_id)
+);
 
 ALTER TABLE learning_tenant ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_membership ENABLE ROW LEVEL SECURITY;
@@ -217,6 +276,8 @@ ALTER TABLE course_offering ENABLE ROW LEVEL SECURITY;
 ALTER TABLE access_entitlement ENABLE ROW LEVEL SECURITY;
 ALTER TABLE enrollment_record ENABLE ROW LEVEL SECURITY;
 ALTER TABLE learning_registration ENABLE ROW LEVEL SECURITY;
+ALTER TABLE learning_attempt ENABLE ROW LEVEL SECURITY;
+ALTER TABLE progress_projection ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY learning_tenant_tenant_policy ON learning_tenant
     USING (tenant_id::text = current_setting('app.tenant_id', true));
@@ -242,6 +303,10 @@ CREATE POLICY enrollment_record_tenant_policy ON enrollment_record
     USING (tenant_id::text = current_setting('app.tenant_id', true));
 CREATE POLICY learning_registration_tenant_policy ON learning_registration
     USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY learning_attempt_tenant_policy ON learning_attempt
+    USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY progress_projection_tenant_policy ON progress_projection
+    USING (tenant_id::text = current_setting('app.tenant_id', true));
 
 -- The owning migration role must not be used by the application connection.
 ALTER TABLE learning_tenant FORCE ROW LEVEL SECURITY;
@@ -256,3 +321,5 @@ ALTER TABLE course_offering FORCE ROW LEVEL SECURITY;
 ALTER TABLE access_entitlement FORCE ROW LEVEL SECURITY;
 ALTER TABLE enrollment_record FORCE ROW LEVEL SECURITY;
 ALTER TABLE learning_registration FORCE ROW LEVEL SECURITY;
+ALTER TABLE learning_attempt FORCE ROW LEVEL SECURITY;
+ALTER TABLE progress_projection FORCE ROW LEVEL SECURITY;
