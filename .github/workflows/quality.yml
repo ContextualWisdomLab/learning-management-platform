@@ -58,7 +58,7 @@ jobs:
 
   rust-kernel:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:18-alpine
@@ -78,27 +78,53 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: Configure non-superuser application role
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Configure separated migration and application roles
         env:
           PGPASSWORD: ci-only
         run: |
           psql --host 127.0.0.1 --username postgres --dbname postgres \
             --set ON_ERROR_STOP=1 \
+            --command "CREATE ROLE lms_migrator LOGIN PASSWORD 'migration-only' NOSUPERUSER NOBYPASSRLS"
+          psql --host 127.0.0.1 --username postgres --dbname postgres \
+            --set ON_ERROR_STOP=1 \
             --command "CREATE ROLE lms_kernel LOGIN PASSWORD 'ci-only' NOSUPERUSER NOBYPASSRLS"
           psql --host 127.0.0.1 --username postgres --dbname postgres \
             --set ON_ERROR_STOP=1 \
-            --command "ALTER DATABASE lms_kernel_test OWNER TO lms_kernel"
+            --command "ALTER DATABASE lms_kernel_test OWNER TO lms_migrator"
+          psql --host 127.0.0.1 --username postgres --dbname postgres \
+            --set ON_ERROR_STOP=1 \
+            --command "REVOKE ALL ON DATABASE lms_kernel_test FROM lms_kernel; GRANT CONNECT ON DATABASE lms_kernel_test TO lms_kernel"
           role_flags=$(psql --host 127.0.0.1 --username postgres --dbname postgres \
             --tuples-only --no-align \
-            --command "SELECT CASE WHEN rolsuper THEN 't' ELSE 'f' END || '|' || CASE WHEN rolbypassrls THEN 't' ELSE 'f' END FROM pg_roles WHERE rolname = 'lms_kernel'")
-          test "$role_flags" = 'f|f'
+            --command "SELECT string_agg(rolname || ':' || CASE WHEN rolsuper THEN 't' ELSE 'f' END || '|' || CASE WHEN rolbypassrls THEN 't' ELSE 'f' END, ';' ORDER BY rolname) FROM pg_roles WHERE rolname IN ('lms_kernel', 'lms_migrator')")
+          test "$role_flags" = 'lms_kernel:f|f;lms_migrator:f|f'
+          test "$(psql --host 127.0.0.1 --username postgres --dbname postgres --tuples-only --no-align --command "SELECT pg_has_role('lms_kernel', 'lms_migrator', 'MEMBER')")" = 'f'
+          PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 \
+            --command "REVOKE CREATE ON SCHEMA public FROM PUBLIC" \
+            --file migrations/0001_learning_kernel.sql
+          PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 \
+            --command "GRANT USAGE ON SCHEMA public TO lms_kernel; GRANT SELECT ON TABLE learning_tenant TO lms_kernel; GRANT SELECT, INSERT ON TABLE login_identity_reference, learner_profile, tenant_membership TO lms_kernel"
+          test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test --tuples-only --no-align --command "SELECT count(*) FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace JOIN pg_roles owner ON owner.oid = relation.relowner WHERE namespace.nspname = 'public' AND relation.relkind = 'r' AND relation.relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence') AND owner.rolname = 'lms_migrator'")" = '10'
+          test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test --tuples-only --no-align --command "SELECT has_schema_privilege('lms_kernel', 'public', 'CREATE')")" = 'f'
       - name: Install pinned Rust
         run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
       - name: Install pinned Rust components
         run: rustup component add rustfmt clippy --toolchain 1.97.1
+      - name: Regenerate dependency lock for the reviewed feature set
+        run: cargo +1.97.1 generate-lockfile
+      - name: Upload regenerated dependency lock
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr4-cargo-lock-${{ github.event.pull_request.head.sha || github.sha }}
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 1
       - name: Check formatting
         run: cargo +1.97.1 fmt --all -- --check
-      - name: Run domain tests
+      - name: Run domain and adapter tests
         run: cargo +1.97.1 test --workspace --all-targets --locked
       - name: Run Clippy
         run: cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
@@ -106,55 +132,114 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo +1.97.1 doc --workspace --no-deps --locked
-      - name: Run learner registration API smoke test
+      - name: Verify authorization, RLS, and rollback-reapply contracts
         env:
           DATABASE_URL: postgres://lms_kernel:ci-only@127.0.0.1:5432/lms_kernel_test
-          PGPASSWORD: ci-only
           LMS_BIND_ADDRESS: 127.0.0.1:8080
         run: |
+          tenant_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+          other_tenant_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+          api_key='ci-tenant-key'
+          api_key_sha256=$(printf %s "$api_key" | sha256sum | cut -d ' ' -f 1)
+          export LMS_TENANT_API_KEY_SHA256="{\"$tenant_id\":\"$api_key_sha256\"}"
+
+          for tenant_spec in "$tenant_id:ci-tenant" "$other_tenant_id:other-tenant"; do
+            current_tenant_id=${tenant_spec%%:*}
+            current_tenant_slug=${tenant_spec#*:}
+            PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
+              --set ON_ERROR_STOP=1 \
+              --command "BEGIN; SET LOCAL app.tenant_id = '$current_tenant_id'; INSERT INTO learning_tenant (tenant_id, tenant_slug) VALUES ('$current_tenant_id', '$current_tenant_slug'); COMMIT;"
+          done
+
+          if PGPASSWORD=ci-only psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 \
+            --command "ALTER TABLE learning_tenant DISABLE ROW LEVEL SECURITY" > "$RUNNER_TEMP/app_alter_rls.log" 2>&1; then
+            cat "$RUNNER_TEMP/app_alter_rls.log"
+            echo "application role unexpectedly altered RLS" >&2
+            exit 1
+          fi
+
           cargo +1.97.1 build --bin lms_api --locked
           target/debug/lms_api > "$RUNNER_TEMP/lms_api.log" 2>&1 &
           api_pid=$!
           trap 'kill "$api_pid" 2>/dev/null || true' EXIT
           attempt=0
           until curl --fail --silent http://127.0.0.1:8080/healthz > /dev/null; do
+            if ! kill -0 "$api_pid" 2>/dev/null; then
+              cat "$RUNNER_TEMP/lms_api.log"
+              exit 1
+            fi
             attempt=$((attempt + 1))
             test "$attempt" -lt 60
             sleep 1
           done
+
           payload='{"identity_authority":"keyverse","external_subject_reference":"ci-subject","membership_status":"active"}'
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
             --header 'content-type: application/json' --data "$payload" \
-            'http://127.0.0.1:8080/v1/tenants/00000000-0000-0000-0000-000000000000/learners')" = '401'
-          policy_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
-            --tuples-only --no-align \
-            --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
-          test "$policy_count" = '8'
-          tenant_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
-          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
-            --set ON_ERROR_STOP=1 \
-            --command "BEGIN; SET LOCAL app.tenant_id = '$tenant_id'; INSERT INTO learning_tenant (tenant_id, tenant_slug) VALUES ('$tenant_id', 'ci-tenant'); COMMIT;"
-          curl --fail --silent --show-error --request POST \
-            --header 'content-type: application/json' \
-            --data "$payload" \
-            --write-out '%{http_code}' \
-            --output "$RUNNER_TEMP/lms_api_response.json" \
-            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners" | grep -x '201'
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners")" = '401'
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
-            --header 'content-type: application/json' --data "$payload" \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" --data "$payload" \
+            "http://127.0.0.1:8080/v1/tenants/$other_tenant_id/learners")" = '403'
+          test "$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data "$payload" --write-out '%{http_code}' \
+            --output "$RUNNER_TEMP/lms_api_response.json" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners")" = '201'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" --data "$payload" \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners")" = '409'
+
+          learner_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["learner_id"])' "$RUNNER_TEMP/lms_api_response.json")
+          visible_tenant_count=$(PGPASSWORD=ci-only psql --quiet --tuples-only --no-align \
+            --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --command "SET app.tenant_id = '$tenant_id'" \
+            --command "SELECT count(*) FROM learning_tenant")
+          test "$visible_tenant_count" = '1'
+          if PGPASSWORD=ci-only psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 \
+            --command "BEGIN; SET LOCAL app.tenant_id = '$tenant_id'; INSERT INTO tenant_membership (tenant_id, learner_id, membership_status, valid_from) VALUES ('$other_tenant_id', '$learner_id', 'active', now()); COMMIT;" > "$RUNNER_TEMP/cross_tenant_insert.log" 2>&1; then
+            cat "$RUNNER_TEMP/cross_tenant_insert.log"
+            echo "cross-tenant insert unexpectedly succeeded" >&2
+            exit 1
+          fi
+          grep -qi 'row-level security' "$RUNNER_TEMP/cross_tenant_insert.log"
+
           kill "$api_pid" 2>/dev/null || true
           wait "$api_pid" 2>/dev/null || true
           trap - EXIT
-          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+
+          PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --set ON_ERROR_STOP=1 --file scripts/postgres_rollback_rehearsal.sql
-          table_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+          table_count=$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --tuples-only --no-align \
-            --command "SELECT count(*) FROM pg_class WHERE relkind = 'r' AND relname IN ('learning_tenant', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence')")
+            --command "SELECT count(*) FROM pg_class WHERE relkind = 'r' AND relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence')")
           test "$table_count" = '0'
-          psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+
+          PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --set ON_ERROR_STOP=1 --file migrations/0001_learning_kernel.sql
-          policy_count=$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+          PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 \
+            --command "GRANT USAGE ON SCHEMA public TO lms_kernel; GRANT SELECT ON TABLE learning_tenant TO lms_kernel; GRANT SELECT, INSERT ON TABLE login_identity_reference, learner_profile, tenant_membership TO lms_kernel"
+
+          policy_count=$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")
+          forced_rls_count=$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace WHERE namespace.nspname = 'public' AND relation.relrowsecurity AND relation.relforcerowsecurity")
+          owner_count=$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace JOIN pg_roles owner ON owner.oid = relation.relowner WHERE namespace.nspname = 'public' AND relation.relkind = 'r' AND relation.relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence') AND owner.rolname = 'lms_migrator'")
           test "$policy_count" = '8'
+          test "$forced_rls_count" = '8'
+          test "$owner_count" = '10'
+          test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test --tuples-only --no-align --command "SELECT has_schema_privilege('lms_kernel', 'public', 'CREATE')")" = 'f'
+          test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test --tuples-only --no-align --command "SELECT has_table_privilege('lms_kernel', 'learning_tenant', 'SELECT') AND NOT has_table_privilege('lms_kernel', 'learning_tenant', 'DELETE')")" = 't'
+          if PGPASSWORD=ci-only psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 \
+            --command "ALTER TABLE learning_tenant DISABLE ROW LEVEL SECURITY" > "$RUNNER_TEMP/app_alter_rls_after_reapply.log" 2>&1; then
+            cat "$RUNNER_TEMP/app_alter_rls_after_reapply.log"
+            echo "application role unexpectedly altered RLS after reapply" >&2
+            exit 1
+          fi
