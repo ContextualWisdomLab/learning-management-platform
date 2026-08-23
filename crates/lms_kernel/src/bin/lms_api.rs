@@ -14,7 +14,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use sqlx_core::{error::Error as SqlxError, query::query, row::Row};
+use sqlx_postgres::{PgPool, PgPoolOptions};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -49,8 +50,8 @@ impl TenantAuthorizer {
         for (tenant_id, digest) in configured {
             let tenant_id = Uuid::parse_str(&tenant_id)
                 .map_err(|_| ConfigurationError::InvalidTenantAuthorization)?;
-            let digest = decode_sha256_hex(&digest)
-                .ok_or(ConfigurationError::InvalidTenantAuthorization)?;
+            let digest =
+                decode_sha256_hex(&digest).ok_or(ConfigurationError::InvalidTenantAuthorization)?;
             if api_key_digests.insert(tenant_id, digest).is_some() {
                 return Err(ConfigurationError::InvalidTenantAuthorization);
             }
@@ -94,7 +95,9 @@ enum ConfigurationError {
     MissingTenantAuthorization,
     #[error("LMS_TENANT_API_KEY_SHA256 must be a non-empty tenant-to-SHA-256 JSON object")]
     InvalidTenantAuthorization,
-    #[error("the application database role must not be superuser, BYPASSRLS, a table owner, or a schema creator")]
+    #[error(
+        "the application database role must not be superuser, BYPASSRLS, a table owner, or a schema creator"
+    )]
     UnsafeDatabaseRole,
 }
 
@@ -104,7 +107,7 @@ enum ApiError {
     Forbidden,
     BadRequest(&'static str),
     Conflict,
-    Database(sqlx::Error),
+    Database(SqlxError),
 }
 
 impl IntoResponse for ApiError {
@@ -133,9 +136,9 @@ impl IntoResponse for ApiError {
     }
 }
 
-impl From<sqlx::Error> for ApiError {
-    fn from(error: sqlx::Error) -> Self {
-        if matches!(&error, sqlx::Error::Database(database_error) if database_error.code().as_deref() == Some("23505"))
+impl From<SqlxError> for ApiError {
+    fn from(error: SqlxError) -> Self {
+        if matches!(&error, SqlxError::Database(database_error) if database_error.code().as_deref() == Some("23505"))
         {
             Self::Conflict
         } else {
@@ -182,7 +185,7 @@ fn router(pool: PgPool, tenant_authorizer: TenantAuthorizer) -> Router {
 }
 
 async fn healthz(State(state): State<AppState>) -> Result<Json<HealthResponse>, ApiError> {
-    sqlx::query("SELECT 1").execute(&state.pool).await?;
+    query("SELECT 1").execute(&state.pool).await?;
     Ok(Json(HealthResponse { status: "ok" }))
 }
 
@@ -210,12 +213,12 @@ async fn create_learner(
     }
 
     let mut transaction = state.pool.begin().await?;
-    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+    query("SELECT set_config('app.tenant_id', $1, true)")
         .bind(tenant_id.to_string())
         .execute(&mut *transaction)
         .await?;
 
-    sqlx::query(
+    query(
         "INSERT INTO login_identity_reference (identity_authority, external_subject_reference) \
          VALUES ($1, $2) ON CONFLICT (identity_authority, external_subject_reference) DO NOTHING",
     )
@@ -223,7 +226,7 @@ async fn create_learner(
     .bind(&request.external_subject_reference)
     .execute(&mut *transaction)
     .await?;
-    let identity = sqlx::query(
+    let identity = query(
         "SELECT login_identity_id FROM login_identity_reference \
          WHERE identity_authority = $1 AND external_subject_reference = $2",
     )
@@ -233,21 +236,20 @@ async fn create_learner(
     .await?;
     let login_identity_id: Uuid = identity.try_get("login_identity_id")?;
 
-    sqlx::query(
+    query(
         "INSERT INTO learner_profile (login_identity_id) VALUES ($1) \
          ON CONFLICT (login_identity_id) DO NOTHING",
     )
     .bind(login_identity_id)
     .execute(&mut *transaction)
     .await?;
-    let learner =
-        sqlx::query("SELECT learner_id FROM learner_profile WHERE login_identity_id = $1")
-            .bind(login_identity_id)
-            .fetch_one(&mut *transaction)
-            .await?;
+    let learner = query("SELECT learner_id FROM learner_profile WHERE login_identity_id = $1")
+        .bind(login_identity_id)
+        .fetch_one(&mut *transaction)
+        .await?;
     let learner_id: Uuid = learner.try_get("learner_id")?;
 
-    sqlx::query(
+    query(
         "INSERT INTO tenant_membership \
          (tenant_id, learner_id, membership_status, valid_from) \
          VALUES ($1, $2, $3, now())",
@@ -305,7 +307,7 @@ fn constant_time_equal(left: &[u8; 32], right: &[u8; 32]) -> bool {
 }
 
 async fn verify_application_role(pool: &PgPool) -> Result<(), ConfigurationError> {
-    let role = sqlx::query(
+    let role = query(
         "SELECT role.rolsuper, role.rolbypassrls, \
          EXISTS ( \
              SELECT 1 FROM pg_class relation \
@@ -375,11 +377,8 @@ mod tests {
     }
 
     fn authorizer() -> TenantAuthorizer {
-        TenantAuthorizer::from_json(&format!(
-            r#"{{"{}":"{TOKEN_SHA256}"}}"#,
-            tenant_id()
-        ))
-        .expect("valid authorization fixture")
+        TenantAuthorizer::from_json(&format!(r#"{{"{}":"{TOKEN_SHA256}"}}"#, tenant_id()))
+            .expect("valid authorization fixture")
     }
 
     fn bearer_headers(token: &'static str) -> HeaderMap {
