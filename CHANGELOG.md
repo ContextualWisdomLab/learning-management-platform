@@ -14,3 +14,7 @@
 - Rust learner domain kernel, tenant-scoped PostgreSQL migration, and learner-registration API smoke path.
 - Added non-superuser/NOBYPASSRLS CI application-role verification, customer/self-sponsored multi-tenant affiliation coverage, and disposable migration rollback/reapply rehearsal.
 - Added fail-closed bearer-key-to-tenant authorization, separate migration/application database roles, non-owner application-role assertions, forced-RLS isolation tests, and exact-head dependency-lock regeneration evidence.
+
+### Fixed
+
+- Restrict initial learner registration to `active` membership so a first registration cannot create an `ended` or `suspended` membership that has no transition path back to active.
