@@ -189,6 +189,16 @@ async fn healthz(State(state): State<AppState>) -> Result<Json<HealthResponse>, 
     Ok(Json(HealthResponse { status: "ok" }))
 }
 
+fn validate_initial_membership_status(status: &str) -> Result<(), ApiError> {
+    if status == "active" {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest(
+            "membership_status must be \"active\" for initial registration",
+        ))
+    }
+}
+
 async fn create_learner(
     State(state): State<AppState>,
     Path(tenant_id): Path<Uuid>,
@@ -205,12 +215,7 @@ async fn create_learner(
             "tenant and identity references are required",
         ));
     }
-    if !matches!(
-        request.membership_status.as_str(),
-        "active" | "suspended" | "ended"
-    ) {
-        return Err(ApiError::BadRequest("membership status is invalid"));
-    }
+    validate_initial_membership_status(&request.membership_status)?;
 
     let mut transaction = state.pool.begin().await?;
     query("SELECT set_config('app.tenant_id', $1, true)")
@@ -431,5 +436,19 @@ mod tests {
             TenantAuthorizer::from_json(r#"{"not-a-tenant":"00"}"#),
             Err(ConfigurationError::InvalidTenantAuthorization)
         ));
+    }
+
+    #[test]
+    fn initial_registration_requires_active_membership() {
+        validate_initial_membership_status("active").expect("active registration is allowed");
+
+        for status in ["suspended", "ended", "unknown", ""] {
+            assert!(matches!(
+                validate_initial_membership_status(status),
+                Err(ApiError::BadRequest(
+                    "membership_status must be \"active\" for initial registration"
+                ))
+            ));
+        }
     }
 }
