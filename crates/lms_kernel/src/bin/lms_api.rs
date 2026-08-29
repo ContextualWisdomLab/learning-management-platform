@@ -686,7 +686,9 @@ async fn record_progress(
     {
         return Err(ApiError::BadRequest("progress value is invalid"));
     }
-    let observed_at = request.observed_at.unwrap_or_else(Utc::now);
+    let observed_at = request.observed_at.ok_or(ApiError::BadRequest(
+        "progress observed_at is required; send the source observation timestamp",
+    ))?;
 
     let mut transaction = begin_tenant_transaction(&state.pool, tenant_id).await?;
     let projection = sqlx::query(
