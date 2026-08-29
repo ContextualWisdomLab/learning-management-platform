@@ -31,7 +31,7 @@ PostgreSQL 18 `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` exposes both `OLD
 
 ## Current source and research references (APA 7)
 
-The planning references below were checked on 2026-08-20; the PostgreSQL 18 DML `RETURNING` reference was rechecked on 2026-08-30. They support planning and implementation decisions only; `Not evidenced` remains the status for planned standards until this repository contains executable implementation and exact-head receipts.
+The planning references below were checked on 2026-08-20; the PostgreSQL 18 DML `RETURNING` reference was rechecked on 2026-08-29 UTC (2026-08-30 KST). They support planning and implementation decisions only; `Not evidenced` remains the status for planned standards until this repository contains executable implementation and exact-head receipts.
 
 1EdTech Consortium. (n.d.). *Competencies and Academic Standards Exchange (CASE).* Retrieved August 20, 2026, from https://www.1edtech.org/standards/case
 
