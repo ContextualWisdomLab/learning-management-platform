@@ -78,6 +78,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Configure non-superuser application role
         env:
           PGPASSWORD: ci-only
@@ -198,7 +199,7 @@ jobs:
             --header 'content-type: application/json' --data "$completion_payload" \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/attempts/$attempt_id/progress" \
             | python3 -c 'import json, sys; assert json.load(sys.stdin)["progress_state"] == "completed"'
-          test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+          test "$(PGOPTIONS="-c app.tenant_id=$tenant_id" psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align --command "SELECT attempt_status || '|' || COALESCE(closed_at::text, '') FROM learning_attempt WHERE tenant_id = '$tenant_id' AND learning_attempt_id = '$attempt_id'")" = 'active|'
           repeat_status=$(curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' --data "$completion_payload" \
@@ -212,9 +213,9 @@ jobs:
             --data '{"source_authority":"lrs","external_activity_reference":"activity-ci-2","source_version":"v1","source_digest":"sha256:ci-progress-2","progress_state":"in_progress","progress_percent":20,"observed_at":"2026-01-03T00:00:00Z"}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/attempts/$attempt_id/progress" \
             | python3 -c 'import json, sys; assert json.load(sys.stdin)["progress_state"] == "in_progress"'
-          test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+          test "$(PGOPTIONS="-c app.tenant_id=$tenant_id" psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align --command "SELECT count(*) FROM progress_projection WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '2'
-          test "$(psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+          test "$(PGOPTIONS="-c app.tenant_id=$tenant_id" psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align --command "SELECT count(*) FROM enrollment_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
           kill "$api_pid" 2>/dev/null || true
           wait "$api_pid" 2>/dev/null || true
