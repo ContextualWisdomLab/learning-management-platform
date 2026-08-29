@@ -724,20 +724,14 @@ async fn record_progress(
         "active learning attempt or newer progress observation is required",
     ))?;
     let progress_projection_id: Uuid = projection.try_get("progress_projection_id")?;
-    let next_attempt_status = if request.progress_state == "completed" {
-        "completed"
-    } else {
-        "active"
-    };
     sqlx::query(
-        "UPDATE learning_attempt SET attempt_status = $4, \
-         closed_at = CASE WHEN $4 = 'completed' THEN COALESCE(closed_at, now()) ELSE NULL END \
-         WHERE tenant_id = $1 AND learner_id = $2 AND learning_attempt_id = $3",
+        "UPDATE learning_attempt SET attempt_status = 'active', closed_at = NULL \
+         WHERE tenant_id = $1 AND learner_id = $2 AND learning_attempt_id = $3 \
+           AND attempt_status IN ('launched', 'active')",
     )
     .bind(tenant_id)
     .bind(learner_id)
     .bind(learning_attempt_id)
-    .bind(next_attempt_status)
     .execute(&mut *transaction)
     .await?;
     transaction.commit().await?;
