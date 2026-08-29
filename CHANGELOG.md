@@ -14,4 +14,5 @@
 - Rust learner domain kernel, tenant-scoped PostgreSQL migration, and learner-registration API smoke path.
 - Bounded offering, external entitlement projection, enrollment, and learning registration API path on the stacked kernel branch.
 - Effective-dated learner affiliation API coverage with PostgreSQL exclusion-conflict mapping on the next stack.
+- Added launch attempts and LRS-owned progress projections with out-of-order observation protection.
 - Added non-superuser/NOBYPASSRLS CI application-role verification, customer/self-sponsored multi-tenant affiliation coverage, and disposable migration rollback/reapply rehearsal.

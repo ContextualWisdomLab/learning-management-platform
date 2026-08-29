@@ -25,9 +25,13 @@ The following table is a **planned adoption profile**. Adoption does not imply i
 
 A future conformance claim must identify the exact revision, normative requirement, implementation location, executable test path/command, and exact-head CI receipt. Third-party certification claims require the applicable certification program and may not be inferred from these adoption decisions.
 
+## Implementation standard decisions
+
+PostgreSQL 18 `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` exposes both `OLD` and `NEW` row values. The progress-projection API uses the documented PostgreSQL 18 `OLD` semantics to distinguish a newly inserted projection from an accepted conflict update: a new projection returns HTTP 201, while an equal/newer update to the same source projection returns HTTP 200. This keeps the public idempotency contract explicit without depending on PostgreSQL tuple-header/system columns such as `xmax`. Exact-head CI must still prove the 201/200/stale-observation branches before this decision is treated as executable evidence.
+
 ## Current source and research references (APA 7)
 
-The following references were checked on 2026-08-20. They support planning decisions only; `Not evidenced` remains the status until this repository contains executable implementation and exact-head receipts.
+The planning references below were checked on 2026-08-20; the PostgreSQL 18 DML `RETURNING` reference was rechecked on 2026-08-29 UTC (2026-08-30 KST). They support planning and implementation decisions only; `Not evidenced` remains the status for planned standards until this repository contains executable implementation and exact-head receipts.
 
 1EdTech Consortium. (n.d.). *Competencies and Academic Standards Exchange (CASE).* Retrieved August 20, 2026, from https://www.1edtech.org/standards/case
 
@@ -52,6 +56,8 @@ International Organization for Standardization. (2021). *ISO 29994:2021: Educati
 International Organization for Standardization. (2025). *ISO 21001:2025: Educational organizations—Management systems for educational organizations—Requirements with guidance for use.* https://www.iso.org/standard/21001?browse=ics
 
 National Institute of Standards and Technology. (2024). *The NIST Cybersecurity Framework (CSF) 2.0* (NIST CSWP 29). https://doi.org/10.6028/NIST.CSWP.29
+
+PostgreSQL Global Development Group. (2026). *PostgreSQL 18 documentation: Returning data from modified rows.* https://www.postgresql.org/docs/18/dml-returning.html
 
 PostgreSQL Global Development Group. (2026). *PostgreSQL 18 documentation: Row security policies; table partitioning.* https://www.postgresql.org/docs/current/ddl-rowsecurity.html; https://www.postgresql.org/docs/current/ddl-partitioning.html
 
