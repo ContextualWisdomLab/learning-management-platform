@@ -708,7 +708,8 @@ async fn record_progress(
              observed_at = EXCLUDED.observed_at, \
              recorded_at = now() \
          WHERE progress_projection.observed_at <= EXCLUDED.observed_at \
-         RETURNING progress_projection_id",
+         RETURNING progress_projection_id, \
+                   old.progress_projection_id IS NULL AS created",
     )
     .bind(tenant_id)
     .bind(learner_id)
@@ -726,6 +727,7 @@ async fn record_progress(
         "active learning attempt or newer progress observation is required",
     ))?;
     let progress_projection_id: Uuid = projection.try_get("progress_projection_id")?;
+    let created: bool = projection.try_get("created")?;
     sqlx::query(
         "UPDATE learning_attempt SET attempt_status = 'active', closed_at = NULL \
          WHERE tenant_id = $1 AND learner_id = $2 AND learning_attempt_id = $3 \
@@ -739,7 +741,11 @@ async fn record_progress(
     transaction.commit().await?;
 
     Ok((
-        StatusCode::CREATED,
+        if created {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        },
         Json(ProgressResponse {
             progress_projection_id,
             tenant_id,
