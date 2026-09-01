@@ -1,5 +1,7 @@
 # Learning Management Platform
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ContextualWisdomLab/learning-management-platform)
+
 A standards-oriented learning-management system for employees, customers, partners, certification candidates, association members, and self-sponsored learners.
 
 ## Scope
