@@ -1,23 +1,18 @@
 # Product and technical gap baseline
 
-**As of:** 2026-08-20  
-**Status:** Baseline for implementation planning; not a product-readiness or standards-conformance claim.
+**Status:** Code-current planning baseline. This document is not a product-readiness, release, deployment, certification, customer, or standards-conformance claim.
+
+## Evidence authority
+
+Protected `develop` is the shipped repository authority. Open PRs are candidate truth only until protected integration. Mutable PR head SHAs, workflow run IDs, review states, and mergeability are deliberately **not persisted as current evidence in this file** because a commit that records its own mutable review head becomes stale as soon as the branch moves. For integration decisions, re-fetch PR #1 and its exact current head directly from GitHub and accept only evidence attached to that unchanged head.
+
+Historical bootstrap facts may remain pinned when they are explicitly historical. Protected `develop@1b89a16bbbd6c4b7c6ee4e8b81e2c8c651d1ce2c` was the repository initialization baseline and contained only the bootstrap README. PR #1 introduces the documentation/product architecture candidate described below; it must not be represented as shipped behavior before merge.
 
 ## Executive verdict
 
-The repository is a documentation bootstrap, not yet a usable learning-management product. The buyer-facing opportunity is clear: let an employee, partner, customer, candidate, association member, or self-sponsored learner complete a course without manufacturing an HR record, while keeping identity, content, evidence, assessment, and billing truth in their owning systems. The current repository has no executable application, database migration, integration client, API contract, browser journey, or production test suite. The first commercial slice is therefore the external-learner registration-to-completion vertical, delivered behind versioned contracts and proven with real PostgreSQL and end-to-end tests.
+The repository is still a documentation and architecture foundation, not yet a usable learning-management product. The buyer-facing opportunity is clear: let an employee, partner, customer, candidate, association member, or self-sponsored learner complete learning without manufacturing an HR record, while keeping identity, content, activity evidence, assessment responses/results, and billing truth in their owning systems.
 
-The next customer-visible milestone is not another document: a tenant-isolated learner can be entitled, enrolled, launched, progress-tracked, assessed, and issued a reproducible completion result without an Orgmetra worker reference.
-
-## Current-state evidence
-
-| Evidence | Observed fact | Consequence |
-|---|---|---|
-| `develop@1b89a16bbbd6c4b7c6ee4e8b81e2c8c651d1ce2c` | Contains only the bootstrap `README.md`. | No runtime behavior exists on the base branch. |
-| PR [#1](https://github.com/ContextualWisdomLab/learning-management-platform/pull/1), exact head `973f899` | Adds governance, architecture, data-model, ADR, standards, exact-head quality validation, explicit evidence-metadata allowlisting, and registration-to-decision cardinality. It remains open with review and checks pending. | The bootstrap is not merged evidence and must not be described as implemented LMS behavior. |
-| Failed run `32262959841` on predecessor head `1edc471` | The quality workflow required `docs/adr/0001-lms-authority-boundary.md`, while the committed ADR was `docs/adr/0001-learning-authority-boundary.md`. | PR commit `cdda6ec` corrects the shared path contract; a new exact-head green run is still required. |
-| Issue [#2](https://github.com/ContextualWisdomLab/learning-management-platform/issues/2) | Defines the repository boundary, modular-monolith slices, PostgreSQL 3NF, adapters, accessibility, and evidence gates. | This is the foundation backlog, not delivered functionality. |
-| Issue [#3](https://github.com/ContextualWisdomLab/learning-management-platform/issues/3) | Defines the external-learner vertical and acceptance criteria for identity separation, effective dating, replayable completion, tenancy, and coverage. | This is the first product slice to implement after the bootstrap merges. |
+The next customer-visible milestone is executable: a tenant-isolated learner can be entitled, enrolled, launched, progress-tracked, assessed when required, and issued a reproducible completion result without requiring an Orgmetra worker reference.
 
 ## Product requirements baseline
 
@@ -27,23 +22,24 @@ The next customer-visible milestone is not another document: a tenant-isolated l
 2. A learner enters through Keyverse or an approved external identity reference; no employee record is required.
 3. The learner receives a sponsor- or self-funded entitlement projection and enrolls in the offering.
 4. The LMS launches the registered learning activity and consumes progress projections from the LRS.
-5. The learner completes the required activity and, when applicable, an assessment delegated to Psychometrics Commons.
+5. The learner completes required activity and, when applicable, an assessment delegated to Psychometrics Commons.
 6. A versioned completion policy evaluates immutable evidence references and publishes an immutable decision.
 7. Credential orchestration issues a portable credential reference without copying source content, assessment payloads, or billing-provider truth.
 
 ### Roles that must not collapse
 
-`learner_profile`, login identity, employee/worker reference, sponsor, payer, contracting organization, and credential beneficiary are separate concepts. One login identity may be linked to several tenant-scoped learner affiliations. A learner may have no worker reference, several effective-dated affiliations, or concurrent affiliations in different tenants.
+`learner_profile`, login identity, employee/worker reference, sponsor, payer, contracting organization, and credential beneficiary are separate concepts. One login identity may link to several tenant-scoped learner affiliations. A learner may have no worker reference, several effective-dated affiliations, or concurrent affiliations in different tenants.
 
 ### Acceptance slice
 
-The first vertical is complete only when all of the following are demonstrated on an exact head:
+The first vertical is complete only when an unchanged candidate head demonstrates all of the following:
 
-- a non-employee learner completes the full registration-to-completion journey;
-- an employee-linked learner follows the same path without special-case domain duplication;
+- a non-employee learner completes the registration-to-completion journey;
+- an employee-linked learner follows the same domain path without special-case duplication;
 - sponsor, payer, learner, identity, organization, and credential recipient remain distinguishable in API and database records;
 - content release, LRS evidence, assessment result, identity, and billing objects remain external references;
-- the completion result names the exact policy revision and immutable evidence references and can be replayed;
+- the completion result names the exact authoritative policy revision and immutable evidence references and can be replayed;
+- any optional `decision_time_metadata.policy_revision_reference` exactly mirrors the authoritative tenant-scoped `completion_policy_revision` FK or the write fails closed;
 - cross-tenant reads and writes fail closed;
 - repeated enrollment, concurrent affiliations, expiry, correction, replay, retry, and out-of-order integration events are tested;
 - real PostgreSQL, browser E2E, security, migration/rollback, provenance, and observability evidence is attached to the candidate head.
@@ -66,102 +62,59 @@ The first implementation should remain one deployable service with explicit modu
 | Integration hub | versioned API/event clients, idempotency, outbox, retries | all external authorities |
 | Audit and provenance | actor, tenant, correlation, source, digest, decision history | authorization and observability |
 
-```mermaid
-flowchart LR
-    K[Keyverse identity] --> L[Learner registry]
-    O[Orgmetra worker reference] --> L
-    B[Billing entitlement authority] --> E[Enrollment]
-    S[Content Studio release] --> C[Catalog and offering]
-    C --> E
-    R[LRS evidence] --> P[Progress projection]
-    P --> D[Completion policy]
-    M[Psychometrics result snapshot] --> D
-    E --> D
-    D --> Q[Credential orchestration]
-    H[Integration hub and outbox] --- L
-    H --- E
-    H --- D
-    H --- Q
-    A[Audit and provenance] --- H
-```
-
 ### Data and time invariants
 
 - Every tenant-owned table has a tenant key, and every cross-tenant foreign key includes the tenant boundary.
 - Authoritative facts use third-normal-form relations with descriptive two-or-more-word `snake_case` names.
-- Effective-dated relationships use `valid_from` and `valid_to`; facts that can be corrected after observation also retain transaction/observation metadata and a superseding relation.
-- Completion policies are immutable revisions. A correction creates a new decision that points to the prior decision; it never rewrites published evidence.
-- `decision_evidence_reference` stores source authority, opaque snapshot ID, digest, observed version, and decision-time metadata, never source payload copies.
+- Effective-dated relationships use `valid_from` and `valid_to`; correctable observed facts also retain transaction/observation metadata and a superseding relation.
+- Completion policies are immutable revisions. `completion_decision.completion_policy_revision` is the authoritative revision identity for replay/audit.
+- `decision_time_metadata.policy_revision_reference`, when present, is only a non-authoritative audit mirror and must exactly match that authoritative revision; mismatch fails closed.
+- A correction creates a new completion decision pointing to the prior decision; published evidence is never rewritten in place.
+- `decision_evidence_reference` stores source authority, opaque snapshot ID, digest, observed version, and explicitly allowlisted scalar decision-time metadata, never source payload copies.
 - Entitlements are versioned local projections of external authority, never a second billing ledger.
 
 ### PostgreSQL and hot-partition baseline
 
-Use PostgreSQL row-level security as a defense-in-depth tenant boundary, with application authorization and tenant-scoped foreign keys still required. Keep low-volume identity and enrollment tables ordinary until measurements justify partitioning. For append-heavy `audit_event_record`, `outbox_event_record`, and progress/evidence projection tables, use a measured multi-level strategy: time range partitions for retention plus a tenant hash bucket where a single tenant can create a hot partition. Every partitioned write path must have an index and retention/rollback test. A partition design is not accepted merely because it exists; load evidence must show bounded skew and no cross-tenant leakage.
+Use PostgreSQL row-level security as defense in depth, with application authorization and tenant-scoped foreign keys still required. Keep low-volume identity/enrollment tables ordinary until measurement justifies partitioning. For append-heavy audit, outbox, and progress/evidence projection tables, use measured time-range partitions for retention and a tenant hash bucket only when load evidence shows a single-tenant hot partition. Every partitioned write path requires index, retention, recovery, and rollback evidence.
 
 ### Integration contract baseline
 
-No module may read another repository's application tables. Each external boundary needs a versioned OpenAPI or event schema, consumer/provider contract tests, idempotency key, correlation ID, observed source version, digest, retry policy, dead-letter handling, and a documented ownership decision. Until those artifacts exist, the boundary remains `planned`, not `implemented`.
+No module may read another repository's application tables. Each external boundary needs a versioned OpenAPI/package/event schema, consumer/provider contract tests, idempotency key, correlation ID, observed source version, digest, retry/dead-letter policy, and documented authority. Until those artifacts exist, the boundary remains `planned`, not `implemented`.
 
 ### Security, privacy, accessibility, and operability
 
-PII must remain usable for legitimate work without copying it into every service. The design uses least-privilege access, purpose- and tenant-scoped authorization, field-level audit, consent and retention policy, encrypted transport/storage, controlled break-glass access, and tokenized external references where a stable reference is sufficient. Masking is not the only control and must not make the learner journey unusable.
+PII must remain usable for legitimate work without being copied into every service. The target control set uses least privilege, purpose- and tenant-scoped authorization, field-level audit, consent/retention policy, encryption, controlled break-glass access, and opaque external references where full source data are unnecessary.
 
-The future UI must target WCAG 2.2 AA, keyboard and screen-reader behavior, focus/error semantics, locale/time-zone consistency, and design tokens with a Storybook inventory. There is no UI surface in the current repository, so no Figma file or Figma ID is applicable to this baseline; create the ADR entry when the first user-facing flow is designed.
+The future UI targets WCAG 2.2 AA, keyboard/screen-reader behavior, focus/error semantics, locale/time-zone consistency, design tokens, and a Storybook inventory. There is no current UI surface, so no Figma publication claim is made.
 
-Production readiness requires CSAP and SOC 2 control mapping, SBOM and provenance, key rotation, backup/restore, migration rollback, rate limits, alerting, SLOs, audit export, and incident evidence. NIST CSF 2.0 is the control-organizing reference; it does not itself certify the service.
+Production readiness requires evidence for CSAP/SOC 2-oriented controls, SBOM/provenance, key rotation, backup/restore, migration rollback, rate limits, alerting, SLOs, audit export, incident response, and realistic load. NIST CSF 2.0 may organize controls; it is not a certification.
 
 ## Gap register and delivery order
 
-| ID | Priority | Buyer-visible gap | Current evidence | Exit evidence | Next change |
-|---|---:|---|---|---|---|
-| G-01 | P0 | No executable LMS kernel or API | Base branch has only README | Running service with documented health and tenant context | Implement issue #2 foundation slice |
-| G-02 | P0 | No learner/identity/employee/sponsor/payer separation | Documented only in PR #1 | Real PostgreSQL schema and integration tests for all roles | Implement learner registry and tenant authorization |
-| G-03 | P0 | No external learner enrollment path | Issue #3 only | Non-employee journey passes browser/API E2E | Implement catalog, entitlement projection, enrollment, registration |
-| G-04 | P0 | No time-aware affiliation or correction model | Requirements only | Effective-dated and replay/correction tests pass | Add valid-time and decision transaction metadata |
-| G-05 | P0 | No versioned external contracts | PR #1 lists planned identifiers only | Schemas, clients, contract tests, idempotent adapters | Add integration package and outbox |
-| G-06 | P0 | No deterministic completion/evidence engine | Data-model prose only | Replay produces the same decision from policy/evidence versions | Implement completion policy module |
-| G-07 | P1 | No provenance, audit, or operational evidence | No runtime source | Correlation-linked audit and decision history with export | Add audit/provenance module |
-| G-08 | P1 | No PostgreSQL 3NF, RLS, migration, or hot-partition implementation | Entity vocabulary only | Migration, RLS, load, retention, and rollback evidence | Add real PostgreSQL migrations |
-| G-09 | P1 | No security/compliance control implementation | Standards profile only | CSAP/SOC 2/NIST control map with test receipts, SBOM, provenance | Add security and operability gates |
-| G-10 | P1 | No accessibility/UI/design-system surface | No frontend files | Storybook, token tests, browser interaction and i18n evidence | Start UI only after API journey is real |
-| G-11 | P1 | No realistic tests or coverage | No test tree | 100% owned statement/branch coverage plus edge and E2E evidence | Build tests with each vertical slice |
-| G-12 | P2 | No release, rollback, or cross-repository ecosystem loop | One open PR and two open issues | Versioned release, changelog, scheduled queue/next-action evidence | Merge PRs, then consume highest-leverage issue |
+| ID | Priority | Buyer-visible gap | Current evidence | Exit evidence |
+|---|---:|---|---|---|
+| G-01 | P0 | No executable LMS kernel/API | documentation/architecture candidate only | running service with health and tenant context |
+| G-02 | P0 | No executable learner/identity/employee/sponsor/payer separation | data-model contract only | PostgreSQL schema + integration tests for each role |
+| G-03 | P0 | No external learner enrollment path | product journey only | non-employee browser/API E2E |
+| G-04 | P0 | No implemented time-aware affiliation/correction model | requirements only | valid-time + replay/correction tests |
+| G-05 | P0 | No released versioned external contracts | planned identifiers only | schemas, clients, contract tests, idempotent adapters |
+| G-06 | P0 | No deterministic completion/evidence engine | decision contract prose only | replay from exact policy/evidence versions |
+| G-07 | P1 | No provenance/audit runtime evidence | no runtime source | correlation-linked audit/decision history + export |
+| G-08 | P1 | No PostgreSQL 3NF/RLS/migration/hot-partition implementation | model design only | migration, RLS, load, retention, rollback evidence |
+| G-09 | P1 | No security/compliance implementation | standards/control baseline only | tested controls, SBOM, provenance |
+| G-10 | P1 | No accessibility/UI/design-system surface | no frontend | Storybook, token, browser interaction, i18n evidence |
+| G-11 | P1 | No runtime coverage/E2E evidence | documentation validation only | 100% owned statement/branch + edge/E2E evidence |
+| G-12 | P1 | No explicit public source license on protected branch | licensing decision may exist only on active PR until merge | protected root LICENSE + README/package metadata as applicable |
+| G-13 | P2 | No release/rollback ecosystem evidence | no released artifact | versioned release, changelog, provenance, rollback evidence |
 
-## PR and issue loop
+## PR and issue integration loop
 
-For every open PR: re-fetch the exact head, inspect all review threads, correct only valid findings, run local checks, wait for current checks without manufacturing evidence, then verify current-head approval and merge state before protected merge. After merge, re-fetch `develop`, select the highest-leverage open issue, create a small stack, and repeat. A green check is not a semantic approval; a merge is not runtime proof.
+For every open PR: re-fetch the exact current head, inspect reviews/threads and exact-head checks, correct valid repository-owned failures, and merge only through live protected governance. Do not persist a mutable current head SHA in this file as if it were durable product evidence. A predecessor check is historical after a push; a green check is not semantic approval; a merge is not runtime proof.
 
-The current loop is:
-
-1. PR #1: validate `cdda6ec`, obtain an independent current-head review, then merge only when the live rules permit it.
-2. Issue #2: add the executable modular-monolith foundation and repository gates.
-3. Issue #3: stack the external-learner vertical on that foundation and prove the real journey.
-4. Add the product gaps found by runtime evidence as the next bounded PR, not as speculative scaffolding.
+After the documentation/bootstrap PR integrates, the executable modular-monolith foundation and the external-learner vertical are the next bounded product slices. New runtime evidence should update this gap register rather than accumulate self-staling PR status prose.
 
 ## Standards and research evidence
 
-The standards profile remains planned adoption. The current authoritative pages support LTI 1.3 with LTI Advantage services AGS/NRPS/Deep Linking 2.0, QTI 3.0, CASE 1.1, Open Badges 3.0, and CLR 2.0. IEEE's current xAPI page identifies IEEE 9274.1.1-2023 as active and also links the ISO/IEC/IEEE 39274-1-1:2025 international standard; implementation must pin the exact purchased/accessible revision before claiming conformance. These standards provide interchange and contract targets, not proof that this repository implements them.
+The standards profile remains planned adoption. Exact revisions, official sources, and evidence status are maintained in [`docs/doctoring/STANDARD_TRACEABILITY.md`](doctoring/STANDARD_TRACEABILITY.md). The profile includes the repository-selected LTI/LTI Advantage, QTI, CASE, Open Badges, CLR, xAPI/IEEE, and learning-management quality/security references, but documentation alone is not conformance.
 
-Learning-analytics research reinforces the product boundary: activity data are proxy signals and can create surveillance, aggregation, secondary-use, exclusion, distortion, and decisional-interference risks. Therefore, progress projections remain evidence references and cannot directly become high-stakes completion or employment decisions without an explicit, versioned policy and auditable human/tenant governance.
-
-See `docs/doctoring/STANDARD_TRACEABILITY.md` for the adoption matrix, exact sources, APA 7 references, and evidence status.
-
-## References (APA 7)
-
-1EdTech Consortium. (n.d.). *Competencies and Academic Standards Exchange (CASE).* Retrieved August 20, 2026, from https://www.1edtech.org/standards/case
-
-1EdTech Consortium. (n.d.). *Comprehensive Learner Record standard.* Retrieved August 20, 2026, from https://www.1edtech.org/standards/clr
-
-1EdTech Consortium. (n.d.). *Learning Tools Interoperability (LTI).* Retrieved August 20, 2026, from https://www.1edtech.org/standards/lti
-
-1EdTech Consortium. (n.d.). *Open Badges.* Retrieved August 20, 2026, from https://www.1edtech.org/standards/open-badges
-
-1EdTech Consortium. (n.d.). *Question & Test Interoperability (QTI).* Retrieved August 20, 2026, from https://www.1edtech.org/standards/qti
-
-Badiuzzaman, M. B., & Rahman, S. S. (2026). Beyond compliance: A Solove-informed analysis of tracking, profiling, and student privacy in learning management systems. *Frontiers in Education, 11*. https://doi.org/10.3389/feduc.2026.1871384
-
-IEEE Standards Association. (2023). *IEEE Standard for learning technology—JavaScript Object Notation (JSON) data model format and Representational State Transfer (RESTful) web service for learner experience data tracking and access (IEEE Std 9274.1.1-2023).* https://standards.ieee.org/ieee/9274.1.1/7321/
-
-National Institute of Standards and Technology. (2024). *The NIST Cybersecurity Framework (CSF) 2.0* (NIST CSWP 29). https://doi.org/10.6028/NIST.CSWP.29
-
-PostgreSQL Global Development Group. (2026). *PostgreSQL 18 documentation: Row security policies; table partitioning.* https://www.postgresql.org/docs/current/ddl-rowsecurity.html; https://www.postgresql.org/docs/current/ddl-partitioning.html
+Learning-analytics research reinforces the product boundary: activity data are proxy signals and can create surveillance, aggregation, secondary-use, exclusion, distortion, and decisional-interference risks. Progress projections therefore remain evidence inputs and cannot silently become high-impact completion or employment decisions without an explicit versioned policy and auditable governance.
