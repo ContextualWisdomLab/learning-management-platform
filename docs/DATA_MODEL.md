@@ -5,6 +5,7 @@ The authoritative database uses third normal form and two-or-more-word `snake_ca
 Initial entities:
 
 - `learning_tenant`
+- `login_identity_reference`
 - `learner_profile`
 - `learning_affiliation`
 - `tenant_membership`
@@ -26,6 +27,8 @@ Initial entities:
 - `credential_record`
 
 A learner is not assumed to be an employee, login account, payer, or contracting organization. Optional employment linkage is represented as an effective-dated `learning_affiliation` or external worker reference with `valid_from` and `valid_to`; no employee row is synthesized for a non-employee learner.
+
+`login_identity_reference` is a global opaque reference to an identity authority and external subject. `learner_profile` links one such identity to a stable learner, while `tenant_membership` grants tenant-scoped participation. This permits one identity to have memberships in several tenants without copying credentials or treating a login identity as an employee.
 
 ## Completion policy and decision relationships
 
@@ -52,3 +55,5 @@ course_offering 1 ---- * enrollment_record
 `access_entitlement` is a versioned local reference/projection of an entitlement owned by the Billing Control Plane or another authorized entitlement authority. It stores the external entitlement reference, source authority, effective interval, observed version/digest, and projection status. It does not store provider payment objects or become the authoritative commercial permission record.
 
 All authoritative facts are normalized to 3NF; repeated names, provider payloads, and external-system facts are referenced through dedicated identifiers rather than embedded denormalized copies.
+
+The executable schema is `migrations/0001_learning_kernel.sql`. It applies composite tenant foreign keys, effective-dated affiliation exclusion, and PostgreSQL row-level security policies. The migration intentionally does not store source payloads from Keyverse, the LRS, Psychometrics Commons, Learning Content Studio, or Billing Control Plane.

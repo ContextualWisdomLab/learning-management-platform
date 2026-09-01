@@ -23,3 +23,11 @@ These identifiers name CWL-owned boundary contracts; they are not conformance cl
 ## First vertical
 
 Partner & Customer Academy: external learner onboarding, sponsor or self entitlement, enrollment, standards-based learning activity, assessment handoff, completion-policy evaluation, and portable credential issuance.
+
+## Executable baseline
+
+The current implementation slice is `crates/lms_kernel`: Rust domain rules enforce non-employee affiliations, effective dates, tenant/learner evidence boundaries, and replay fingerprints. `crates/lms_kernel/src/bin/lms_api.rs` provides health and bearer-authorized learner registration backed by `migrations/0001_learning_kernel.sql`.
+
+Migration and request execution are separate trust boundaries. A dedicated `NOSUPERUSER NOBYPASSRLS` migration role owns and applies the schema; the application role is also `NOSUPERUSER NOBYPASSRLS` but owns no tables, cannot create in the application schema, and receives only the DML privileges needed by the registration slice. All eight tenant-owned relations use forced RLS. The adapter derives `app.tenant_id` only after the supplied bearer key's SHA-256 digest matches the configured digest for the requested tenant.
+
+The bearer-key map is a fail-closed bootstrap authorization seam, not the final Keyverse/OIDC integration. CI verifies missing-authentication rejection, token-to-tenant mismatch rejection, cross-tenant RLS denial, inability of the application role to disable RLS, and disposable rollback/reapply with ownership and forced-RLS invariants restored. This remains an executable learner-registration kernel, not yet the complete Partner & Customer Academy journey. Catalog/offering, entitlement, enrollment, progress, released identity adapters, completion persistence, credentials, and browser E2E remain open gaps in `docs/product-technical-gap-baseline.md`.
