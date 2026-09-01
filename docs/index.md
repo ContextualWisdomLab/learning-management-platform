@@ -19,15 +19,16 @@ Identity, employment, authored content releases, observed learning activity, psy
 ## Documentation
 
 - [README](https://github.com/ContextualWisdomLab/learning-management-platform#readme) — product value, boundaries, journey, and maturity.
-- [Product requirements](https://github.com/ContextualWisdomLab/learning-management-platform/blob/develop/docs/PRD.md) — product scope, users, jobs, and non-goals.
-- [Technical requirements](https://github.com/ContextualWisdomLab/learning-management-platform/blob/develop/docs/TRD.md) — technical target and implementation constraints.
-- [Architecture](https://github.com/ContextualWisdomLab/learning-management-platform/blob/develop/ARCHITECTURE.md) — system context and authority boundaries.
+- [Architecture](https://github.com/ContextualWisdomLab/learning-management-platform/blob/develop/docs/ARCHITECTURE.md) — system context and authority boundaries.
+- [Data model](https://github.com/ContextualWisdomLab/learning-management-platform/blob/develop/docs/DATA_MODEL.md) — 3NF target, effective-time relationships, completion decisions, policy revisions, evidence references, and external entitlement projections.
+- [Learning authority ADR](https://github.com/ContextualWisdomLab/learning-management-platform/blob/develop/docs/adr/0001-learning-authority-boundary.md) — repository-owned learning authority and external system boundaries.
+- [Standards traceability](https://github.com/ContextualWisdomLab/learning-management-platform/blob/develop/docs/doctoring/STANDARD_TRACEABILITY.md) — planned standards adoption, exact revisions, official sources, and evidence expectations.
 - [Product and technical gap baseline](https://github.com/ContextualWisdomLab/learning-management-platform/blob/develop/docs/product-technical-gap-baseline.md) — evidence-backed current gaps.
 - [Releases](https://github.com/ContextualWisdomLab/learning-management-platform/releases) — published release history when available.
 - [Ask DeepWiki](https://deepwiki.com/ContextualWisdomLab/learning-management-platform) — repository-grounded questions and code navigation.
 
 ## Evidence boundary
 
-Protected `develop` remains repository authority. Architecture and PRD scope do not establish a running API, database implementation, browser journey, standards conformance, production deployment, customer deployment, or released artifact unless current protected-branch and live operational evidence independently proves it.
+Protected `develop` remains repository authority. Architecture scope does not establish a running API, database implementation, browser journey, standards conformance, production deployment, customer deployment, or released artifact unless current protected-branch and live operational evidence independently proves it.
 
 This file is a public documentation landing source. GitHub Pages publication is a separate repository-facing state and must be verified live before it is claimed available.
