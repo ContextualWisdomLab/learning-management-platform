@@ -3,8 +3,8 @@
 Learning Management Platform is the ContextualWisdomLab system of record for
 tenant-scoped learner affiliations, enrollments, progress, completion policy,
 and credential orchestration. This repository is at foundation stage: its first
-domain slice models learner affiliation without requiring workforce identity for
-customer or partner learners.
+domain slice models every declared non-employee affiliation without requiring
+workforce identity.
 
 The current code is a dependency-free Rust library. It does not implement an
 HTTP API, database adapter, or user interface yet.

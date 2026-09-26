@@ -13,6 +13,20 @@ pub enum AffiliationKind {
     Customer,
     /// A learner receiving access through a partner organization.
     Partner,
+    /// A non-employee learner delivering services to the tenant.
+    Contractor,
+    /// A prospective learner participating before enrollment or employment.
+    Candidate,
+    /// A learner participating through an education relationship.
+    Student,
+    /// A learner participating as a guardian of another learner.
+    Guardian,
+    /// A learner participating through an association membership.
+    AssociationMember,
+    /// A learner using an offering open to the public.
+    PublicLearner,
+    /// A learner who sponsors their own access.
+    SelfSponsoredLearner,
 }
 
 /// A time-varying learner-to-tenant relationship.
@@ -74,10 +88,10 @@ impl LearningAffiliation {
             (AffiliationKind::Employee, _) => {
                 return Err(LearningAffiliationError::MissingEmployeeWorkerReference);
             }
-            (AffiliationKind::Customer | AffiliationKind::Partner, Some(_)) => {
+            (_, Some(_)) => {
                 return Err(LearningAffiliationError::UnexpectedWorkerReference);
             }
-            (AffiliationKind::Customer | AffiliationKind::Partner, None) => None,
+            (_, None) => None,
         };
 
         Ok(Self {

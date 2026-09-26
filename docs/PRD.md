@@ -2,9 +2,9 @@
 
 ## Goal
 
-Enable a tenant to represent an external customer or partner learner without an
-Orgmetra worker dependency, while retaining an explicit workforce ACL for
-employees.
+Enable a tenant to represent every declared non-employee learning relationship
+without an Orgmetra worker dependency, while retaining an explicit workforce
+ACL for employees.
 
 ## Actors and first journey
 
@@ -13,13 +13,14 @@ employees.
 - **Payer:** owns the commercial transaction outside this bounded context.
 - **Tenant administrator:** governs affiliations and later offerings.
 
-The first executable journey creates a customer or partner affiliation with no
-worker reference. Employee creation fails closed until an Orgmetra reference is
-supplied.
+The first executable journey creates a customer, partner, contractor,
+candidate, student, guardian, association-member, public, or self-sponsored
+affiliation with no worker reference. Employee creation fails closed until an
+Orgmetra reference is supplied.
 
 ## Acceptance criteria
 
-1. Customer and Partner affiliations succeed without Orgmetra.
+1. Every declared non-employee affiliation succeeds without Orgmetra.
 2. Employee affiliations fail without a nonblank workforce reference.
 3. Non-employee affiliations reject workforce references.
 4. Semantic identifiers are nonblank and validity windows move forward.

@@ -9,6 +9,8 @@ immutable release.
 
 - Proposed dependency-free Rust `LearningAffiliation` kernel.
 - External learner path that does not depend on Orgmetra.
+- Contractor, candidate, student, guardian, association-member, public, and
+  self-sponsored learner relationships under the employee-only ACL invariant.
 - Employee-only workforce reference and forward-only validity invariants.
 - Exact-head format, lint, test, and 100% owned line/branch coverage gate.
 - Dependency-free workflow contract that keeps format, Clippy, and tests on

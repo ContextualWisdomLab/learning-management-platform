@@ -6,9 +6,10 @@ Proposed
 
 ## Problem
 
-Learning access must support partner and customer academy users who have no
-employment record. Making Orgmetra mandatory would leak the workforce model
-into Learning Management and block a commercial external-learner journey.
+Learning access must support partner, customer, contractor, candidate, student,
+guardian, association-member, public, and self-sponsored users who have no
+employee record. Making Orgmetra mandatory would leak the workforce model into
+Learning Management and block commercial external-learner journeys.
 
 ## Constraints
 
@@ -19,8 +20,8 @@ into Learning Management and block a commercial external-learner journey.
 
 ## Alternatives
 
-1. **Require an Orgmetra worker for every learner.** Rejected because customer
-   and partner learners are not workers.
+1. **Require an Orgmetra worker for every learner.** Rejected because declared
+   non-employee learners are not employees.
 2. **Copy an Orgmetra worker schema locally.** Rejected because it creates two
    writers and couples persistence across bounded contexts.
 3. **Use one optional worker reference with no affiliation invariant.** Rejected
@@ -49,8 +50,10 @@ representation; database and API timestamp translation remains unselected.
 ## Concrete scenes
 
 - A partner learner is accepted with `Partner` and no worker reference.
+- A candidate and a self-sponsored public learner are accepted without fake
+  workforce records.
 - An employee request without an Orgmetra reference is rejected before storage.
-- A customer payload containing a worker reference is rejected as boundary
+- Any non-employee payload containing a worker reference is rejected as boundary
   leakage.
 - A replay with an end instant equal to its start is rejected as ambiguous.
 

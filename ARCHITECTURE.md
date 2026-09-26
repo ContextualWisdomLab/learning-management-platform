@@ -8,8 +8,10 @@ orchestration. The first aggregate is `LearningAffiliation`, a time-varying link
 between a `learner_id` and `tenant_id`.
 
 `AffiliationKind` is Ubiquitous Language. `Employee` requires an opaque
-Orgmetra worker reference. `Customer` and `Partner` explicitly reject that
-reference, allowing the same product flow to serve non-workforce learners.
+Orgmetra worker reference. `Customer`, `Partner`, `Contractor`, `Candidate`,
+`Student`, `Guardian`, `AssociationMember`, `PublicLearner`, and
+`SelfSponsoredLearner` explicitly reject that reference, allowing the same
+product flow to serve non-workforce learners without inventing employees.
 
 ## Context Map
 
@@ -26,7 +28,7 @@ reference, allowing the same product flow to serve non-workforce learners.
 1. `tenant_id`, `affiliation_id`, and `learner_id` are nonblank.
 2. A bounded validity interval ends strictly after it starts.
 3. `Employee` carries one nonblank Orgmetra worker reference.
-4. `Customer` and `Partner` carry no Orgmetra worker reference.
+4. Every non-employee affiliation carries no Orgmetra worker reference.
 5. External systems remain references behind ACLs; this repository never reads
    their databases.
 

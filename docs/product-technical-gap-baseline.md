@@ -22,7 +22,7 @@ contracts through ACLs; it never copies source or uses cross-service SQL.
 
 | Gap | Buyer-visible risk | Action and evidence | Status |
 |---|---|---|---|
-| External learner foundation | Customer/partner academies fail if every learner must be a worker | PR #23 tests and implements employee-only Orgmetra references | In progress |
+| External learner foundation | Commercial learner relationships fail if every learner must be an employee | PR #23 covers all ten declared affiliation kinds under one employee-only Orgmetra invariant | In review |
 | PostgreSQL persistence | No durable tenant, learner, affiliation, enrollment, or policy record | Proposed 3NF ERD; add migration, invariant, concurrency, and rollback tests | Proposed |
 | Identity and tenancy | No authentication, SCIM provisioning, or tenant authorization | Consume an immutable Keyverse release through an ACL; fail closed before release | Blocked on contract |
 | Learning-event projection | No xAPI/cmi5 projection or replay | Consume a released learning-interoperability-contracts contract and LRS API; no schema copy | Blocked on release |

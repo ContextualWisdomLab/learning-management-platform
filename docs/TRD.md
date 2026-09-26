@@ -15,6 +15,10 @@ aggregate.
 - Output: immutable affiliation or one typed, fail-closed error.
 - External I/O: none.
 
+`AffiliationKind` covers the ten relationships declared by Issue #2. Only
+`Employee` accepts a workforce ACL reference; the remaining nine kinds share
+one fail-closed non-employee branch.
+
 ## Quality and operations
 
 Rust 1.90.0 is pinned for formatting, Clippy, and tests. Because
