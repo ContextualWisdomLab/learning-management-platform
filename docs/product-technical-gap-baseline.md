@@ -30,7 +30,7 @@ contracts through ACLs; it never copies source or uses cross-service SQL.
 | CEFR placement | No placement workflow | Issues #21/#22 remain dependent on immutable interoperability and psychometrics releases | Blocked on releases |
 | Partner & Customer Academy UI | No sellable learner/admin journey | Product-owned Figma, tokens, shadcn/ui, Storybook state/locale matrix, E2E, and k6 | Proposed |
 | Security and release | No deployable artifact, SBOM, provenance, or rollback proof | Central required Checks plus exact-revision release evidence after a service exists | Proposed |
-| Reproducible branch coverage | Stable Rust cannot execute the unstable `cargo-llvm-cov --branch` mode, and a text-only guard can accept non-executable decoys | Dependency-free contract keeps product checks on Rust 1.90.0, pins coverage to nightly-2026-05-13, and mutation-tests executable `run`-block membership | In review |
+| Reproducible branch coverage | Stable Rust cannot execute the unstable `cargo-llvm-cov --branch` mode, and text/indent-only guards can accept YAML block-scalar decoys | Dependency-free bounded structure scanner keeps product checks on Rust 1.90.0, pins coverage to nightly-2026-05-13, and mutation-tests actual step-level `run` and `with.toolchain` membership | In review |
 | Operability/performance | No service SLO or measured page p95 | Add async service, realistic workload, connection-close proof, and k6 p95 ≤20 ms | Proposed |
 
 ## Next safe action

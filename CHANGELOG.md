@@ -15,7 +15,7 @@ immutable release.
 - Exact-head format, lint, test, and 100% owned line/branch coverage gate.
 - Dependency-free workflow contract that keeps format, Clippy, and tests on
   Rust 1.90.0 while pinning nightly-2026-05-13 for unstable branch coverage.
-- Mutation test proving commented or out-of-block command decoys cannot satisfy
-  the workflow contract.
+- Mutation tests proving commented, out-of-block, or nested block-scalar decoys
+  cannot satisfy command or Rust toolchain-step contracts.
 - PRD, TRD, ADR, ERD, Context Map, security, testing, operability, UX, and Gap
   baseline documents.

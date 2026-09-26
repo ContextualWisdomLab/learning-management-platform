@@ -2,54 +2,168 @@
 set -euo pipefail
 
 workflow="${WORKFLOW_PATH:-.github/workflows/quality.yml}"
+rust_toolchain_action="dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87"
 
-require_text() {
-  local expected="$1"
-  local failure="$2"
+workflow_records() {
+  awk '
+    BEGIN {
+      job_indent = -1
+      with_indent = -1
+    }
+    function indentation(line) {
+      match(line, /[^[:space:]]/)
+      return RSTART ? RSTART - 1 : 0
+    }
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    function flush_step() {
+      if (step_started && step_uses != "" && step_toolchain != "") {
+        print "toolchain\t" step_uses "\t" step_toolchain
+      }
+      step_started = 0
+      step_uses = ""
+      step_toolchain = ""
+      with_indent = -1
+    }
+    {
+      line_indent = indentation($0)
 
-  if ! grep -Fq -- "$expected" "$workflow"; then
-    printf '%s\n' "$failure" >&2
-    exit 1
-  fi
+      if (in_run) {
+        if ($0 ~ /^[[:space:]]*$/ || line_indent > run_indent) {
+          command = trim($0)
+          if (command != "" && command !~ /^#/) {
+            print "run\t" command
+          }
+          next
+        }
+        in_run = 0
+      }
+
+      if (in_scalar) {
+        if ($0 ~ /^[[:space:]]*$/ || line_indent > scalar_indent) {
+          next
+        }
+        in_scalar = 0
+      }
+
+      if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*#/) {
+        next
+      }
+
+      if (in_steps && line_indent <= steps_indent) {
+        flush_step()
+        in_steps = 0
+      }
+      if (in_jobs && line_indent <= jobs_indent &&
+          $0 !~ /^[[:space:]]*jobs:[[:space:]]*$/) {
+        in_jobs = 0
+        job_indent = -1
+      }
+
+      if (line_indent == 0 && $0 ~ /^jobs:[[:space:]]*$/) {
+        in_jobs = 1
+        jobs_indent = 0
+        next
+      }
+      if (in_jobs && line_indent == jobs_indent + 2 &&
+          $0 ~ /^[[:space:]]*[A-Za-z0-9_-]+:[[:space:]]*$/) {
+        job_indent = line_indent
+        next
+      }
+      if (job_indent >= 0 && line_indent == job_indent + 2 &&
+          $0 ~ /^[[:space:]]*steps:[[:space:]]*$/) {
+        in_steps = 1
+        steps_indent = line_indent
+        next
+      }
+
+      if (in_steps && line_indent == steps_indent + 2 &&
+          $0 ~ /^[[:space:]]*-[[:space:]]+/) {
+        flush_step()
+        step_started = 1
+        step_indent = line_indent
+        item = trim($0)
+        if (item ~ /^-[[:space:]]+uses:[[:space:]]*/) {
+          sub(/^-[[:space:]]+uses:[[:space:]]*/, "", item)
+          step_uses = trim(item)
+        }
+        next
+      }
+
+      if (step_started && with_indent >= 0 && line_indent <= with_indent) {
+        with_indent = -1
+      }
+      if (step_started && line_indent == step_indent + 2 &&
+          $0 ~ /^[[:space:]]*uses:[[:space:]]*/) {
+        value = $0
+        sub(/^[[:space:]]*uses:[[:space:]]*/, "", value)
+        step_uses = trim(value)
+        next
+      }
+      if (step_started && line_indent == step_indent + 2 &&
+          $0 ~ /^[[:space:]]*with:[[:space:]]*$/) {
+        with_indent = line_indent
+        next
+      }
+      if (step_started && with_indent >= 0 && line_indent == with_indent + 2 &&
+          $0 ~ /^[[:space:]]*toolchain:[[:space:]]*/) {
+        value = $0
+        sub(/^[[:space:]]*toolchain:[[:space:]]*/, "", value)
+        step_toolchain = trim(value)
+        next
+      }
+      if (step_started && line_indent == step_indent + 2 &&
+          $0 ~ /^[[:space:]]*run:[[:space:]]*\|[[:space:]]*$/) {
+        in_run = 1
+        run_indent = line_indent
+        next
+      }
+
+      if ($0 ~ /:[[:space:]]*[|>][-+0-9]*[[:space:]]*(#.*)?$/) {
+        in_scalar = 1
+        scalar_indent = line_indent
+      }
+    }
+    END { flush_step() }
+  ' "$workflow"
 }
 
 require_run_command() {
   local expected="$1"
   local failure="$2"
 
-  if ! awk -v expected="$expected" '
-    function indentation(line) {
-      match(line, /[^[:space:]]/)
-      return RSTART ? RSTART - 1 : 0
-    }
-    /^[[:space:]]*run:[[:space:]]*\|[[:space:]]*$/ {
-      run_indent = indentation($0)
-      in_run = 1
-      next
-    }
-    in_run {
-      if ($0 !~ /^[[:space:]]*$/ && indentation($0) <= run_indent) {
-        in_run = 0
-        next
-      }
-      command = $0
-      sub(/^[[:space:]]+/, "", command)
-      if (command !~ /^#/ && index(command, expected) == 1 &&
-          (length(command) == length(expected) ||
-           substr(command, length(expected) + 1, 1) == " ")) {
-        found = 1
-      }
+  if ! workflow_records | awk -F '\t' -v expected="$expected" '
+    $1 == "run" && index($2, expected) == 1 &&
+      (length($2) == length(expected) ||
+       substr($2, length(expected) + 1, 1) == " ") {
+      found = 1
     }
     END { exit(found ? 0 : 1) }
-  ' "$workflow"; then
+  '; then
     printf '%s\n' "$failure" >&2
     exit 1
   fi
 }
 
-require_text "toolchain: 1.90.0" \
+require_toolchain_step() {
+  local expected="$1"
+  local failure="$2"
+  local expected_record
+
+  expected_record="$(printf 'toolchain\t%s\t%s' "$rust_toolchain_action" "$expected")"
+
+  if ! workflow_records | grep -Fqx -- "$expected_record"; then
+    printf '%s\n' "$failure" >&2
+    exit 1
+  fi
+}
+
+require_toolchain_step "1.90.0" \
   "missing pinned stable Rust toolchain"
-require_text "toolchain: nightly-2026-05-13" \
+require_toolchain_step "nightly-2026-05-13" \
   "missing pinned nightly branch-coverage toolchain"
 require_run_command "cargo +1.90.0 fmt --all --check" \
   "formatting must use the pinned stable toolchain"
