@@ -7,4 +7,3 @@ publish = false
 [lib]
 name = "learning_management_platform"
 path = "src/lib.rs"
-

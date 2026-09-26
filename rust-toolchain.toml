@@ -2,4 +2,3 @@
 channel = "1.90.0"
 components = ["clippy", "llvm-tools-preview", "rustfmt"]
 profile = "minimal"
-

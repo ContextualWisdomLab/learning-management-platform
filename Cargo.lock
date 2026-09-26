@@ -5,4 +5,3 @@ version = 4
 [[package]]
 name = "learning-management-platform"
 version = "0.1.0"
-
