@@ -28,6 +28,23 @@ fn external_learner_does_not_require_an_orgmetra_worker_reference() {
 }
 
 #[test]
+fn partner_learner_does_not_require_an_orgmetra_worker_reference() {
+    let affiliation = LearningAffiliation::new(
+        "tenant_partner",
+        "affiliation_partner",
+        "learner_partner",
+        AffiliationKind::Partner,
+        None,
+        1_798_761_600,
+        None,
+    )
+    .expect("partner learners must not depend on Orgmetra");
+
+    assert_eq!(affiliation.affiliation_kind(), AffiliationKind::Partner);
+    assert_eq!(affiliation.orgmetra_worker_reference(), None);
+}
+
+#[test]
 fn employee_affiliation_preserves_its_acl_reference_and_validity_window() {
     let affiliation = LearningAffiliation::new(
         "tenant_employer",
@@ -97,6 +114,25 @@ fn non_employee_affiliation_rejects_an_orgmetra_worker_reference() {
         None,
     )
     .expect_err("non-employee learners must not be coupled to workforce identity");
+
+    assert_eq!(
+        error,
+        LearningAffiliationError::UnexpectedWorkerReference
+    );
+}
+
+#[test]
+fn customer_affiliation_rejects_an_orgmetra_worker_reference() {
+    let error = LearningAffiliation::new(
+        "tenant_academy",
+        "affiliation_customer",
+        "learner_customer",
+        AffiliationKind::Customer,
+        Some("worker_should_not_cross_boundary"),
+        1_798_761_600,
+        None,
+    )
+    .expect_err("customer learners must not be coupled to workforce identity");
 
     assert_eq!(
         error,
