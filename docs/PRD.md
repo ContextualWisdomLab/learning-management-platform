@@ -28,4 +28,3 @@ supplied.
 
 Enrollment, completion policy, credentials, persistence, API, and UI are
 separate incremental outcomes in the Gap baseline.
-

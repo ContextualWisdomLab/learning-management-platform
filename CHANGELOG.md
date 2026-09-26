@@ -13,4 +13,3 @@ immutable release.
 - Exact-head format, lint, test, and 100% owned line/branch coverage gate.
 - PRD, TRD, ADR, ERD, Context Map, security, testing, operability, UX, and Gap
   baseline documents.
-

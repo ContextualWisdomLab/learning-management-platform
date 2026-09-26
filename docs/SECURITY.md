@@ -12,4 +12,3 @@
 
 Threat modeling, tenant authorization, audit events, dependency review, SBOM,
 provenance, and incident operations remain required before deployment.
-

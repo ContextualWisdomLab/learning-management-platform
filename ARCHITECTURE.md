@@ -32,4 +32,3 @@ reference, allowing the same product flow to serve non-workforce learners.
 
 Database, API, enrollment, completion, and UI designs remain Proposed and are
 tracked in the Gap baseline rather than implied by this kernel.
-

@@ -38,4 +38,3 @@ After PR #23 reaches exact-head GREEN and review, implement PostgreSQL
 affiliation persistence as a separate Draft PR. Keep UI, LRS, Keyverse,
 Orgmetra, billing, and psychometrics integrations behind ports or feature flags
 until their immutable owner releases are verified.
-

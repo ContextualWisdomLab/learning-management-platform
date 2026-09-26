@@ -27,4 +27,3 @@ erDiagram
 The physical PostgreSQL design must preserve 3NF, tenant-scoped uniqueness, an
 exclusive end instant, and the employee-only worker-reference invariant. It
 requires migration and rollback tests before adoption.
-

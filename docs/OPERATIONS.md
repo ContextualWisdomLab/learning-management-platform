@@ -8,4 +8,3 @@ probes, bounded retries, graceful connection closure, migration/rollback
 runbooks, SLOs, and exact-revision build/SBOM/provenance evidence. Performance
 claims, including page p95 at or below 20 ms, require a real deployable slice and
 k6 evidence; no such claim is made here.
-

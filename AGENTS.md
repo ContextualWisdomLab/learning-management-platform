@@ -28,4 +28,3 @@ they are never reimplemented here.
 Run format, Clippy with warnings denied, tests, and LLVM coverage using the
 commands encoded in `.github/workflows/quality.yml`. Organization-required
 security workflows remain owned by `ContextualWisdomLab/.github`.
-

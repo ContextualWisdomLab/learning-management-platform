@@ -58,4 +58,3 @@ representation; database and API timestamp translation remains unselected.
 
 Define PostgreSQL migrations, tenancy authorization, API idempotency, and the
 Partner & Customer Academy UI in independent Proposed ADRs and PRs.
-

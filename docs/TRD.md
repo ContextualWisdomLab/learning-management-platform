@@ -27,4 +27,3 @@ workflows own CodeQL, Semgrep, secret scanning, SBOM, and provenance gates.
 PostgreSQL, Keyverse, Orgmetra, LRS, billing, placement, and UI adapters are not
 hidden inside this crate. Each requires a released upstream contract and its own
 test-first slice.
-
