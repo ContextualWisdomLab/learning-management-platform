@@ -7,7 +7,7 @@ for command in \
   "cargo +1.90.0 fmt --all --check" \
   "cargo +1.90.0 clippy --all-targets --locked -- -D warnings" \
   "cargo +1.90.0 test --all-targets --locked" \
-  "cargo +nightly-2026-05-13 llvm-cov --locked --branch"; do
+  "cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json"; do
   mutated_workflow="$(mktemp)"
   sed "s|^          ${command}|          # ${command}|" "$workflow" > "$mutated_workflow"
   printf '\nx-command-decoy: "%s"\n' "$command" >> "$mutated_workflow"
@@ -21,6 +21,38 @@ for command in \
 
   rm -f "$mutated_workflow"
 done
+
+for command in \
+  "cargo +1.90.0 fmt --all --check" \
+  "cargo +1.90.0 clippy --all-targets --locked -- -D warnings" \
+  "cargo +1.90.0 test --all-targets --locked" \
+  "cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json"; do
+  mutated_workflow="$(mktemp)"
+  sed "s@^          ${command}\$@          ${command} || true@" \
+    "$workflow" > "$mutated_workflow"
+
+  if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+    >/dev/null 2>&1; then
+    printf 'contract accepted a quality command with a trailing shell operator: %s\n' \
+      "$command" >&2
+    rm -f "$mutated_workflow"
+    exit 1
+  fi
+
+  rm -f "$mutated_workflow"
+done
+
+mutated_workflow="$(mktemp)"
+sed '/^      - name: Format, lint, test, and measure owned production code$/a\        continue-on-error: true' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted quality commands in a non-gating step' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
 
 mutated_workflow="$(mktemp)"
 sed 's|^          cargo +1.90.0 fmt --all --check|          # cargo +1.90.0 fmt --all --check|' \
