@@ -1,0 +1,61 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-quality:
+    name: Rust exact-head quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.90.0
+          components: clippy,llvm-tools-preview,rustfmt
+
+      - name: Verify exact head
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Install hash-verified coverage binary
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSLo "${RUNNER_TEMP}/cargo-llvm-cov.tar.gz" \
+            https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.8.7/cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz
+          echo '967b5cc996c29d8baa52bbb4595ef1f53af35255af8e2036ddbc6468d7b523c7  '"${RUNNER_TEMP}/cargo-llvm-cov.tar.gz" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/cargo-llvm-cov.tar.gz" -C "${RUNNER_TEMP}" cargo-llvm-cov
+          mkdir -p "${RUNNER_TEMP}/bin"
+          install -m 0755 "${RUNNER_TEMP}/cargo-llvm-cov" "${RUNNER_TEMP}/bin/cargo-llvm-cov"
+          echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
+
+      - name: Format, lint, test, and measure owned production code
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          cargo fmt --all --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --all-targets --locked
+          cargo llvm-cov --locked --branch --json --output-path target/llvm-cov.json
+          jq -e '
+            .data[0].totals.lines.percent == 100 and
+            .data[0].totals.branches.percent == 100
+          ' target/llvm-cov.json >/dev/null
+          git diff --exit-code
