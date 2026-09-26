@@ -24,11 +24,17 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Install pinned Rust toolchain
+      - name: Install pinned stable Rust toolchain
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: 1.90.0
-          components: clippy,llvm-tools-preview,rustfmt
+          components: clippy,rustfmt
+
+      - name: Install pinned nightly coverage toolchain
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: nightly-2026-05-13
+          components: llvm-tools-preview
 
       - name: Verify exact head
         env:
@@ -50,10 +56,11 @@ jobs:
       - name: Format, lint, test, and measure owned production code
         shell: bash --noprofile --norc -e -o pipefail {0}
         run: |
-          cargo fmt --all --check
-          cargo clippy --all-targets --locked -- -D warnings
-          cargo test --all-targets --locked
-          cargo llvm-cov --locked --branch --json --output-path target/llvm-cov.json
+          bash tests/quality_workflow_contract.sh
+          cargo +1.90.0 fmt --all --check
+          cargo +1.90.0 clippy --all-targets --locked -- -D warnings
+          cargo +1.90.0 test --all-targets --locked
+          cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json
           jq -e '
             .data[0].totals.lines.percent == 100 and
             .data[0].totals.branches.percent == 100

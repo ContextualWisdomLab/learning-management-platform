@@ -11,5 +11,7 @@ immutable release.
 - External learner path that does not depend on Orgmetra.
 - Employee-only workforce reference and forward-only validity invariants.
 - Exact-head format, lint, test, and 100% owned line/branch coverage gate.
+- Dependency-free workflow contract that keeps format, Clippy, and tests on
+  Rust 1.90.0 while pinning nightly-2026-05-13 for unstable branch coverage.
 - PRD, TRD, ADR, ERD, Context Map, security, testing, operability, UX, and Gap
   baseline documents.
