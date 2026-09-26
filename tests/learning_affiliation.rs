@@ -16,10 +16,7 @@ fn external_learner_does_not_require_an_orgmetra_worker_reference() {
     .expect("external learners must not depend on Orgmetra");
 
     assert_eq!(affiliation.tenant_id(), "tenant_academy");
-    assert_eq!(
-        affiliation.affiliation_id(),
-        "affiliation_external_learner"
-    );
+    assert_eq!(affiliation.affiliation_id(), "affiliation_external_learner");
     assert_eq!(affiliation.learner_id(), "learner_external");
     assert_eq!(affiliation.affiliation_kind(), AffiliationKind::Customer);
     assert_eq!(affiliation.orgmetra_worker_reference(), None);
@@ -42,6 +39,87 @@ fn partner_learner_does_not_require_an_orgmetra_worker_reference() {
 
     assert_eq!(affiliation.affiliation_kind(), AffiliationKind::Partner);
     assert_eq!(affiliation.orgmetra_worker_reference(), None);
+}
+
+#[test]
+fn every_declared_non_employee_relationship_is_orgmetra_independent() {
+    for (affiliation_kind, affiliation_id, learner_id) in [
+        (
+            AffiliationKind::Contractor,
+            "affiliation_contractor",
+            "learner_contractor",
+        ),
+        (
+            AffiliationKind::Candidate,
+            "affiliation_candidate",
+            "learner_candidate",
+        ),
+        (
+            AffiliationKind::Student,
+            "affiliation_student",
+            "learner_student",
+        ),
+        (
+            AffiliationKind::Guardian,
+            "affiliation_guardian",
+            "learner_guardian",
+        ),
+        (
+            AffiliationKind::AssociationMember,
+            "affiliation_association_member",
+            "learner_association_member",
+        ),
+        (
+            AffiliationKind::PublicLearner,
+            "affiliation_public_learner",
+            "learner_public",
+        ),
+        (
+            AffiliationKind::SelfSponsoredLearner,
+            "affiliation_self_sponsored_learner",
+            "learner_self_sponsored",
+        ),
+    ] {
+        let affiliation = LearningAffiliation::new(
+            "tenant_learning_network",
+            affiliation_id,
+            learner_id,
+            affiliation_kind,
+            None,
+            1_798_761_600,
+            None,
+        )
+        .expect("non-employee relationships must not depend on Orgmetra");
+
+        assert_eq!(affiliation.affiliation_kind(), affiliation_kind);
+        assert_eq!(affiliation.orgmetra_worker_reference(), None);
+    }
+}
+
+#[test]
+fn every_declared_non_employee_relationship_rejects_a_worker_reference() {
+    for affiliation_kind in [
+        AffiliationKind::Contractor,
+        AffiliationKind::Candidate,
+        AffiliationKind::Student,
+        AffiliationKind::Guardian,
+        AffiliationKind::AssociationMember,
+        AffiliationKind::PublicLearner,
+        AffiliationKind::SelfSponsoredLearner,
+    ] {
+        let error = LearningAffiliation::new(
+            "tenant_learning_network",
+            "affiliation_external_relationship",
+            "learner_external_relationship",
+            affiliation_kind,
+            Some("worker_should_not_cross_boundary"),
+            1_798_761_600,
+            None,
+        )
+        .expect_err("non-employee relationships reject workforce identity");
+
+        assert_eq!(error, LearningAffiliationError::UnexpectedWorkerReference);
+    }
 }
 
 #[test]
@@ -115,10 +193,7 @@ fn non_employee_affiliation_rejects_an_orgmetra_worker_reference() {
     )
     .expect_err("non-employee learners must not be coupled to workforce identity");
 
-    assert_eq!(
-        error,
-        LearningAffiliationError::UnexpectedWorkerReference
-    );
+    assert_eq!(error, LearningAffiliationError::UnexpectedWorkerReference);
 }
 
 #[test]
@@ -134,10 +209,7 @@ fn customer_affiliation_rejects_an_orgmetra_worker_reference() {
     )
     .expect_err("customer learners must not be coupled to workforce identity");
 
-    assert_eq!(
-        error,
-        LearningAffiliationError::UnexpectedWorkerReference
-    );
+    assert_eq!(error, LearningAffiliationError::UnexpectedWorkerReference);
 }
 
 #[test]
@@ -165,12 +237,7 @@ fn semantic_identifiers_must_not_be_blank() {
             "learner_external",
             "tenant_id",
         ),
-        (
-            "tenant_academy",
-            " ",
-            "learner_external",
-            "affiliation_id",
-        ),
+        ("tenant_academy", " ", "learner_external", "affiliation_id"),
         (
             "tenant_academy",
             "affiliation_external_learner",
