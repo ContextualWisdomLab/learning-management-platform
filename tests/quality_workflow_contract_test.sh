@@ -12,7 +12,8 @@ for command in \
   sed "s|^          ${command}|          # ${command}|" "$workflow" > "$mutated_workflow"
   printf '\nx-command-decoy: "%s"\n' "$command" >> "$mutated_workflow"
 
-  if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh; then
+  if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+    >/dev/null 2>&1; then
     printf 'contract accepted a command outside an executable run block: %s\n' "$command" >&2
     rm -f "$mutated_workflow"
     exit 1

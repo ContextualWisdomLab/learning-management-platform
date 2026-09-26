@@ -57,6 +57,7 @@ jobs:
         shell: bash --noprofile --norc -e -o pipefail {0}
         run: |
           bash tests/quality_workflow_contract.sh
+          bash tests/quality_workflow_contract_test.sh
           cargo +1.90.0 fmt --all --check
           cargo +1.90.0 clippy --all-targets --locked -- -D warnings
           cargo +1.90.0 test --all-targets --locked

@@ -25,10 +25,12 @@ Rust 1.90.0 is pinned for formatting, Clippy, and tests. Because
 `cargo-llvm-cov` v0.8.7 branch coverage is unstable and requires nightly, CI
 pins that one operation to nightly-2026-05-13 with `llvm-tools-preview`. A
 dependency-free workflow contract prevents either toolchain boundary from
-drifting. CI also checks the exact submitted SHA, uses SHA-pinned GitHub
-Actions, verifies the cargo-llvm-cov archive hash, denies Clippy warnings, and
-requires 100% owned production line and branch coverage. Central organization
-workflows own CodeQL, Semgrep, secret scanning, SBOM, and provenance gates.
+drifting. A mutation test proves comments and non-executable YAML fields cannot
+satisfy that contract. CI also checks the exact submitted SHA, uses SHA-pinned
+GitHub Actions, verifies the cargo-llvm-cov archive hash, denies Clippy warnings,
+and requires 100% owned production line and branch coverage. Central
+organization workflows own CodeQL, Semgrep, secret scanning, SBOM, and
+provenance gates.
 
 ## Deferred adapters
 
