@@ -20,12 +20,18 @@ workflow_records() {
       return value
     }
     function flush_step() {
+      for (command_index = 1; command_index <= step_command_count; command_index++) {
+        print "run\t" step_commands[command_index] "\t" \
+          (step_non_gating ? "non-gating" : "gating")
+      }
       if (step_started && step_uses != "" && step_toolchain != "") {
         print "toolchain\t" step_uses "\t" step_toolchain
       }
       step_started = 0
       step_uses = ""
       step_toolchain = ""
+      step_command_count = 0
+      step_non_gating = 0
       with_indent = -1
     }
     {
@@ -35,7 +41,8 @@ workflow_records() {
         if ($0 ~ /^[[:space:]]*$/ || line_indent > run_indent) {
           command = trim($0)
           if (command != "" && command !~ /^#/) {
-            print "run\t" command
+            step_command_count++
+            step_commands[step_command_count] = command
           }
           next
         }
@@ -85,6 +92,8 @@ workflow_records() {
         flush_step()
         step_started = 1
         step_indent = line_indent
+        step_non_gating = 0
+        step_command_count = 0
         item = trim($0)
         if (item ~ /^-[[:space:]]+uses:[[:space:]]*/) {
           sub(/^-[[:space:]]+uses:[[:space:]]*/, "", item)
@@ -106,6 +115,14 @@ workflow_records() {
       if (step_started && line_indent == step_indent + 2 &&
           $0 ~ /^[[:space:]]*with:[[:space:]]*$/) {
         with_indent = line_indent
+        next
+      }
+      if (step_started && line_indent == step_indent + 2 &&
+          $0 ~ /^[[:space:]]*continue-on-error:[[:space:]]*/) {
+        value = $0
+        sub(/^[[:space:]]*continue-on-error:[[:space:]]*/, "", value)
+        sub(/[[:space:]]*#.*/, "", value)
+        step_non_gating = (tolower(trim(value)) == "true")
         next
       }
       if (step_started && with_indent >= 0 && line_indent == with_indent + 2 &&
@@ -136,9 +153,7 @@ require_run_command() {
   local failure="$2"
 
   if ! workflow_records | awk -F '\t' -v expected="$expected" '
-    $1 == "run" && index($2, expected) == 1 &&
-      (length($2) == length(expected) ||
-       substr($2, length(expected) + 1, 1) == " ") {
+    $1 == "run" && $2 == expected && $3 == "gating" {
       found = 1
     }
     END { exit(found ? 0 : 1) }
@@ -171,5 +186,5 @@ require_run_command "cargo +1.90.0 clippy --all-targets --locked -- -D warnings"
   "Clippy must use the pinned stable toolchain"
 require_run_command "cargo +1.90.0 test --all-targets --locked" \
   "tests must use the pinned stable toolchain"
-require_run_command "cargo +nightly-2026-05-13 llvm-cov --locked --branch" \
+require_run_command "cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json" \
   "branch coverage must use the pinned nightly toolchain"

@@ -53,11 +53,15 @@ jobs:
           install -m 0755 "${RUNNER_TEMP}/cargo-llvm-cov" "${RUNNER_TEMP}/bin/cargo-llvm-cov"
           echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
 
-      - name: Format, lint, test, and measure owned production code
+      - name: Enforce quality workflow contract
         shell: bash --noprofile --norc -e -o pipefail {0}
         run: |
           bash tests/quality_workflow_contract.sh
           bash tests/quality_workflow_contract_test.sh
+
+      - name: Format, lint, test, and measure owned production code
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
           cargo +1.90.0 fmt --all --check
           cargo +1.90.0 clippy --all-targets --locked -- -D warnings
           cargo +1.90.0 test --all-targets --locked
