@@ -28,11 +28,11 @@ dependency-free workflow contract prevents either toolchain boundary from
 drifting. Its bounded structure scanner recognizes only actual
 `jobs.*.steps[]` entries, step-level `run` blocks, and
 `dtolnay/rust-toolchain` `with.toolchain` values. Required commands are exact
-and must belong to gating steps; contract enforcement is a separate required
-step. Mutation tests prove comments, unrelated fields, nested YAML block
-scalars, trailing shell operators, conditional jobs or steps, early `exit`
-(including bare `exit;`), and literal or expression-based `continue-on-error`
-cannot satisfy that contract.
+and must be the sole executable command in gating steps; contract enforcement
+is a separate required step. Mutation tests prove comments, unrelated fields,
+nested YAML block scalars, trailing shell operators, conditional jobs or steps,
+early exits, successful shell replacement, and literal or expression-based
+`continue-on-error` cannot satisfy that contract.
 Jobs and steps carrying required commands are unconditional; only explicit
 `continue-on-error: false` is accepted, so dynamic expressions fail closed and
 cannot reset a previously detected non-gating condition. CI

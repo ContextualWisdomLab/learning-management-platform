@@ -59,15 +59,32 @@ jobs:
           bash tests/quality_workflow_contract.sh
           bash tests/quality_workflow_contract_test.sh
 
-      - name: Format, lint, test, and measure owned production code
+      - name: Format owned production code
         shell: bash --noprofile --norc -e -o pipefail {0}
         run: |
           cargo +1.90.0 fmt --all --check
+
+      - name: Lint owned production code
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
           cargo +1.90.0 clippy --all-targets --locked -- -D warnings
+
+      - name: Test owned production code
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
           cargo +1.90.0 test --all-targets --locked
+
+      - name: Measure owned production code
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
           cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json
-          jq -e '
-            .data[0].totals.lines.percent == 100 and
-            .data[0].totals.branches.percent == 100
-          ' target/llvm-cov.json >/dev/null
+
+      - name: Enforce complete owned coverage
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          jq -e '.data[0].totals.lines.percent == 100 and .data[0].totals.branches.percent == 100' target/llvm-cov.json >/dev/null
+
+      - name: Verify generated files are unchanged
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
           git diff --exit-code

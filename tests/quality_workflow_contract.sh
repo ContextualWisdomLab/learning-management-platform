@@ -22,7 +22,7 @@ workflow_records() {
     function flush_step() {
       for (command_index = 1; command_index <= step_command_count; command_index++) {
         print "run\t" step_commands[command_index] "\t" \
-          (step_non_gating ? "non-gating" : "gating")
+          (step_non_gating ? "non-gating" : "gating") "\t" step_command_count
       }
       if (step_started && step_uses != "" && step_toolchain != "") {
         print "toolchain\t" step_uses "\t" step_toolchain
@@ -43,9 +43,6 @@ workflow_records() {
           if (command != "" && command !~ /^#/) {
             step_command_count++
             step_commands[step_command_count] = command
-            if (command ~ /(^|[;&|][[:space:]]*)exit([[:space:];]|$)/) {
-              step_non_gating = 1
-            }
           }
           next
         }
@@ -174,7 +171,7 @@ require_run_command() {
   local failure="$2"
 
   if ! workflow_records | awk -F '\t' -v expected="$expected" '
-    $1 == "run" && $2 == expected && $3 == "gating" {
+    $1 == "run" && $2 == expected && $3 == "gating" && $4 == 1 {
       found = 1
     }
     END { exit(found ? 0 : 1) }
@@ -209,3 +206,7 @@ require_run_command "cargo +1.90.0 test --all-targets --locked" \
   "tests must use the pinned stable toolchain"
 require_run_command "cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json" \
   "branch coverage must use the pinned nightly toolchain"
+require_run_command "jq -e '.data[0].totals.lines.percent == 100 and .data[0].totals.branches.percent == 100' target/llvm-cov.json >/dev/null" \
+  "line and branch coverage must both be complete"
+require_run_command "git diff --exit-code" \
+  "quality checks must not modify tracked files"

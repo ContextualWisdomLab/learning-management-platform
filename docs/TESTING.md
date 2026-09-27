@@ -12,18 +12,20 @@ requires unstable branch coverage to use the pinned nightly-2026-05-13
 toolchain. Its bounded YAML structure scanner admits commands only from
 `jobs.*.steps[]` step-level `run` blocks and admits toolchain pins only from
 SHA-pinned `dtolnay/rust-toolchain` steps under `with.toolchain`. Required
-quality commands must match exactly and run in steps without
-non-false `continue-on-error`, an `if` condition, or an `exit` command. Jobs
+quality commands must match exactly and be the sole executable command in
+steps without non-false `continue-on-error` or an `if` condition. Jobs
 containing the gate must also be unconditional and may use only explicit
 `continue-on-error: false`; dynamic expressions therefore fail closed. The
-contract itself runs in a separate required step. Twenty-one rejection
+contract itself runs in a separate required step. Twenty-six rejection
 mutations prove comments, unrelated fields, nested block scalars, trailing shell
-operators, conditional jobs or steps, early successful exits, and literal or
-expression-based failure tolerance cannot impersonate the required gate. Bare
-`exit;` is treated as an early exit even without a numeric status.
+operators, conditional jobs or steps, early successful exits, successful shell
+replacement, and literal or expression-based failure tolerance cannot
+impersonate the required gate.
 Explicit-false job and step controls prove the safe form remains accepted.
 Non-gating state is monotonic, so an explicit-false property cannot override a
-condition or early exit detected earlier in the same step.
+condition detected earlier in the same step. Isolating each required command
+also makes any added executable line fail closed instead of enumerating shell
+termination syntax.
 Central required workflows provide independent security evidence.
 
 Future database, HTTP, and UI slices require realistic PostgreSQL migration and

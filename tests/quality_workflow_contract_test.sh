@@ -7,9 +7,13 @@ for command in \
   "cargo +1.90.0 fmt --all --check" \
   "cargo +1.90.0 clippy --all-targets --locked -- -D warnings" \
   "cargo +1.90.0 test --all-targets --locked" \
-  "cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json"; do
+  "cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json" \
+  "jq -e '.data[0].totals.lines.percent == 100 and .data[0].totals.branches.percent == 100' target/llvm-cov.json >/dev/null" \
+  "git diff --exit-code"; do
   mutated_workflow="$(mktemp)"
-  sed "s|^          ${command}|          # ${command}|" "$workflow" > "$mutated_workflow"
+  awk -v target="          ${command}" \
+    '{ print $0 == target ? "          # " substr($0, 11) : $0 }' \
+    "$workflow" > "$mutated_workflow"
   printf '\nx-command-decoy: "%s"\n' "$command" >> "$mutated_workflow"
 
   if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
@@ -26,9 +30,12 @@ for command in \
   "cargo +1.90.0 fmt --all --check" \
   "cargo +1.90.0 clippy --all-targets --locked -- -D warnings" \
   "cargo +1.90.0 test --all-targets --locked" \
-  "cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json"; do
+  "cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json" \
+  "jq -e '.data[0].totals.lines.percent == 100 and .data[0].totals.branches.percent == 100' target/llvm-cov.json >/dev/null" \
+  "git diff --exit-code"; do
   mutated_workflow="$(mktemp)"
-  sed "s@^          ${command}\$@          ${command} || true@" \
+  awk -v target="          ${command}" \
+    '{ print $0 == target ? $0 " || true" : $0 }' \
     "$workflow" > "$mutated_workflow"
 
   if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
@@ -44,7 +51,7 @@ done
 
 for continue_on_error_value in "true" "TRUE" '${{ true }}'; do
   mutated_workflow="$(mktemp)"
-  sed "/^      - name: Format, lint, test, and measure owned production code\$/a\\        continue-on-error: ${continue_on_error_value}" \
+  sed "/^      - name: Format owned production code\$/a\\        continue-on-error: ${continue_on_error_value}" \
     "$workflow" > "$mutated_workflow"
 
   if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
@@ -58,7 +65,7 @@ for continue_on_error_value in "true" "TRUE" '${{ true }}'; do
 done
 
 mutated_workflow="$(mktemp)"
-sed '/^      - name: Format, lint, test, and measure owned production code$/a\        if: false' \
+sed '/^      - name: Format owned production code$/a\        if: false' \
   "$workflow" > "$mutated_workflow"
 
 if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
@@ -70,7 +77,7 @@ fi
 rm -f "$mutated_workflow"
 
 mutated_workflow="$(mktemp)"
-sed '/^      - name: Format, lint, test, and measure owned production code$/a\        if: false\
+sed '/^      - name: Format owned production code$/a\        if: false\
         continue-on-error: false' "$workflow" > "$mutated_workflow"
 
 if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
@@ -162,7 +169,7 @@ fi
 rm -f "$mutated_workflow"
 
 mutated_workflow="$(mktemp)"
-sed '/^      - name: Format, lint, test, and measure owned production code$/a\        continue-on-error: false' \
+sed '/^      - name: Format owned production code$/a\        continue-on-error: false' \
   "$workflow" > "$mutated_workflow"
 WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh
 rm -f "$mutated_workflow"
