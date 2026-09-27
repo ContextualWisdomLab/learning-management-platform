@@ -374,6 +374,7 @@ mod tests {
             tenant_id,
             learner_id,
             AffiliationKind::Partner,
+            None,
             DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp"),
             None,
         )
@@ -390,6 +391,7 @@ mod tests {
             Uuid::from_u128(10),
             learner_id,
             AffiliationKind::Customer,
+            None,
             at,
             None,
         )
@@ -398,6 +400,7 @@ mod tests {
             Uuid::from_u128(11),
             learner_id,
             AffiliationKind::SelfSponsored,
+            None,
             at,
             None,
         )
@@ -411,6 +414,76 @@ mod tests {
     }
 
     #[test]
+    fn employee_affiliation_requires_a_nonblank_orgmetra_worker_reference() {
+        let (tenant_id, learner_id) = ids();
+        let at = DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp");
+
+        for worker_reference in [None, Some("   ".to_owned())] {
+            assert_eq!(
+                LearningAffiliation::new(
+                    tenant_id,
+                    learner_id,
+                    AffiliationKind::Employee,
+                    worker_reference,
+                    at,
+                    None,
+                ),
+                Err(KernelError::MissingOrgmetraWorkerReference)
+            );
+        }
+    }
+
+    #[test]
+    fn employee_affiliation_preserves_its_orgmetra_worker_reference() {
+        let (tenant_id, learner_id) = ids();
+        let affiliation = LearningAffiliation::new(
+            tenant_id,
+            learner_id,
+            AffiliationKind::Employee,
+            Some("worker-42".to_owned()),
+            DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp"),
+            None,
+        )
+        .expect("employee affiliation with a worker reference");
+
+        assert_eq!(
+            affiliation.orgmetra_worker_reference.as_deref(),
+            Some("worker-42")
+        );
+    }
+
+    #[test]
+    fn every_non_employee_affiliation_rejects_an_orgmetra_worker_reference() {
+        let (tenant_id, learner_id) = ids();
+        let at = DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp");
+        let non_employee_kinds = [
+            AffiliationKind::Contractor,
+            AffiliationKind::Partner,
+            AffiliationKind::Customer,
+            AffiliationKind::Candidate,
+            AffiliationKind::Student,
+            AffiliationKind::Guardian,
+            AffiliationKind::AssociationMember,
+            AffiliationKind::PublicLearner,
+            AffiliationKind::SelfSponsored,
+        ];
+
+        for affiliation_kind in non_employee_kinds {
+            assert_eq!(
+                LearningAffiliation::new(
+                    tenant_id,
+                    learner_id,
+                    affiliation_kind,
+                    Some("worker-42".to_owned()),
+                    at,
+                    None,
+                ),
+                Err(KernelError::UnexpectedOrgmetraWorkerReference)
+            );
+        }
+    }
+
+    #[test]
     fn rejects_inverted_affiliation_intervals() {
         let (tenant_id, learner_id) = ids();
         let start = DateTime::from_timestamp(1_700_000_001, 0).expect("fixed timestamp");
@@ -418,6 +491,7 @@ mod tests {
             tenant_id,
             learner_id,
             AffiliationKind::Employee,
+            Some("worker-42".to_owned()),
             start,
             Some(start),
         );
