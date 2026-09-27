@@ -1,0 +1,9 @@
+[package]
+name = "learning-management-platform"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "learning_management_platform"
+path = "src/lib.rs"

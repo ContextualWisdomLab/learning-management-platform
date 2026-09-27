@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+workflow=".github/workflows/quality.yml"
+
+for command in \
+  "cargo +1.90.0 fmt --all --check" \
+  "cargo +1.90.0 clippy --all-targets --locked -- -D warnings" \
+  "cargo +1.90.0 test --all-targets --locked" \
+  "cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json" \
+  "jq -e '.data[0].totals.lines.percent == 100 and .data[0].totals.branches.percent == 100' target/llvm-cov.json >/dev/null" \
+  "git diff --exit-code"; do
+  mutated_workflow="$(mktemp)"
+  awk -v target="          ${command}" \
+    '{ print $0 == target ? "          # " substr($0, 11) : $0 }' \
+    "$workflow" > "$mutated_workflow"
+  printf '\nx-command-decoy: "%s"\n' "$command" >> "$mutated_workflow"
+
+  if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+    >/dev/null 2>&1; then
+    printf 'contract accepted a command outside an executable run block: %s\n' "$command" >&2
+    rm -f "$mutated_workflow"
+    exit 1
+  fi
+
+  rm -f "$mutated_workflow"
+done
+
+for command in \
+  "cargo +1.90.0 fmt --all --check" \
+  "cargo +1.90.0 clippy --all-targets --locked -- -D warnings" \
+  "cargo +1.90.0 test --all-targets --locked" \
+  "cargo +nightly-2026-05-13 llvm-cov --locked --branch --json --output-path target/llvm-cov.json" \
+  "jq -e '.data[0].totals.lines.percent == 100 and .data[0].totals.branches.percent == 100' target/llvm-cov.json >/dev/null" \
+  "git diff --exit-code"; do
+  mutated_workflow="$(mktemp)"
+  awk -v target="          ${command}" \
+    '{ print $0 == target ? $0 " || true" : $0 }' \
+    "$workflow" > "$mutated_workflow"
+
+  if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+    >/dev/null 2>&1; then
+    printf 'contract accepted a quality command with a trailing shell operator: %s\n' \
+      "$command" >&2
+    rm -f "$mutated_workflow"
+    exit 1
+  fi
+
+  rm -f "$mutated_workflow"
+done
+
+for continue_on_error_value in "true" "TRUE" '${{ true }}'; do
+  mutated_workflow="$(mktemp)"
+  sed "/^      - name: Format owned production code\$/a\\        continue-on-error: ${continue_on_error_value}" \
+    "$workflow" > "$mutated_workflow"
+
+  if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+    >/dev/null 2>&1; then
+    printf 'contract accepted quality commands in a non-gating step: %s\n' \
+      "$continue_on_error_value" >&2
+    rm -f "$mutated_workflow"
+    exit 1
+  fi
+  rm -f "$mutated_workflow"
+done
+
+mutated_workflow="$(mktemp)"
+sed '/^      - name: Format owned production code$/a\        if: false' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted quality commands in a conditionally skipped step' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed '/^      - name: Format owned production code$/a\        if: false\
+        continue-on-error: false' "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract let explicit false override a skipped step' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed '/^  rust-quality:$/a\    continue-on-error: true' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted quality commands in a non-gating job' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed '/^  rust-quality:$/a\    continue-on-error: false' \
+  "$workflow" > "$mutated_workflow"
+WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed '/^  rust-quality:$/a\    if: false' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted quality commands in a conditionally skipped job' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed '/^          cargo +1.90.0 fmt --all --check$/i\          exit 0' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted quality commands after an early successful exit' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed '/^          cargo +1.90.0 fmt --all --check$/i\          true\
+          exit;' "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted quality commands after a bare successful exit' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed '/^          cargo +1.90.0 fmt --all --check$/i\          exec true' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted quality commands after a successful shell replacement' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed \
+  -e '/^          cargo +1.90.0 fmt --all --check$/i\          exit 0' \
+  -e '/^          git diff --exit-code$/a\        continue-on-error: false' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract let explicit false override an early successful exit' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed '/^      - name: Format owned production code$/a\        continue-on-error: false' \
+  "$workflow" > "$mutated_workflow"
+WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed 's|^          cargo +1.90.0 fmt --all --check|          # cargo +1.90.0 fmt --all --check|' \
+  "$workflow" > "$mutated_workflow"
+cat >> "$mutated_workflow" <<'EOF'
+
+      - name: Run block scalar decoy
+        env:
+          COMMAND_DECOY: |
+            run: |
+              cargo +1.90.0 fmt --all --check
+        run: echo "$COMMAND_DECOY"
+EOF
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted run syntax nested inside an env block scalar' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+for toolchain in "1.90.0" "nightly-2026-05-13"; do
+  mutated_workflow="$(mktemp)"
+  sed "0,/^          toolchain: ${toolchain}$/s//          toolchain: decoy-toolchain/" \
+    "$workflow" > "$mutated_workflow"
+  cat >> "$mutated_workflow" <<EOF
+
+      - name: Toolchain block scalar decoy
+        env:
+          TOOLCHAIN_DECOY: |
+            toolchain: ${toolchain}
+        run: echo \"\$TOOLCHAIN_DECOY\"
+EOF
+
+  if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+    >/dev/null 2>&1; then
+    printf 'contract accepted a toolchain value outside a rust-toolchain step: %s\n' \
+      "$toolchain" >&2
+    rm -f "$mutated_workflow"
+    exit 1
+  fi
+
+  rm -f "$mutated_workflow"
+done
