@@ -42,16 +42,25 @@ for command in \
   rm -f "$mutated_workflow"
 done
 
-mutated_workflow="$(mktemp)"
-sed '/^      - name: Format, lint, test, and measure owned production code$/a\        continue-on-error: true' \
-  "$workflow" > "$mutated_workflow"
+for continue_on_error_value in "true" "TRUE" '${{ true }}'; do
+  mutated_workflow="$(mktemp)"
+  sed "/^      - name: Format, lint, test, and measure owned production code\$/a\\        continue-on-error: ${continue_on_error_value}" \
+    "$workflow" > "$mutated_workflow"
 
-if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
-  >/dev/null 2>&1; then
-  printf '%s\n' 'contract accepted quality commands in a non-gating step' >&2
+  if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+    >/dev/null 2>&1; then
+    printf 'contract accepted quality commands in a non-gating step: %s\n' \
+      "$continue_on_error_value" >&2
+    rm -f "$mutated_workflow"
+    exit 1
+  fi
   rm -f "$mutated_workflow"
-  exit 1
-fi
+done
+
+mutated_workflow="$(mktemp)"
+sed '/^      - name: Format, lint, test, and measure owned production code$/a\        continue-on-error: false' \
+  "$workflow" > "$mutated_workflow"
+WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh
 rm -f "$mutated_workflow"
 
 mutated_workflow="$(mktemp)"
