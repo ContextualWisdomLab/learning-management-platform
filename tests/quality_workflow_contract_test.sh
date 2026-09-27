@@ -70,6 +70,18 @@ fi
 rm -f "$mutated_workflow"
 
 mutated_workflow="$(mktemp)"
+sed '/^      - name: Format, lint, test, and measure owned production code$/a\        if: false\
+        continue-on-error: false' "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract let explicit false override a skipped step' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
 sed '/^  rust-quality:$/a\    continue-on-error: true' \
   "$workflow" > "$mutated_workflow"
 
