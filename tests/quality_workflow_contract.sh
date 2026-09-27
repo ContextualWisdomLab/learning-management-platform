@@ -43,6 +43,9 @@ workflow_records() {
           if (command != "" && command !~ /^#/) {
             step_command_count++
             step_commands[step_command_count] = command
+            if (command ~ /(^|[;&|][[:space:]]*)exit([[:space:]]|$)/) {
+              step_non_gating = 1
+            }
           }
           next
         }
@@ -78,6 +81,17 @@ workflow_records() {
       if (in_jobs && line_indent == jobs_indent + 2 &&
           $0 ~ /^[[:space:]]*[A-Za-z0-9_-]+:[[:space:]]*$/) {
         job_indent = line_indent
+        next
+      }
+      if (job_indent >= 0 && line_indent == job_indent + 2 &&
+          $0 ~ /^[[:space:]]*(continue-on-error|if):[[:space:]]*/) {
+        value = $0
+        sub(/^[[:space:]]*(continue-on-error|if):[[:space:]]*/, "", value)
+        sub(/[[:space:]]*#.*/, "", value)
+        if (tolower(trim(value)) != "false" || $0 ~ /^[[:space:]]*if:/) {
+          print "quality jobs must be unconditional and gating" > "/dev/stderr"
+          exit 1
+        }
         next
       }
       if (job_indent >= 0 && line_indent == job_indent + 2 &&
@@ -123,6 +137,11 @@ workflow_records() {
         sub(/^[[:space:]]*continue-on-error:[[:space:]]*/, "", value)
         sub(/[[:space:]]*#.*/, "", value)
         step_non_gating = (tolower(trim(value)) != "false")
+        next
+      }
+      if (step_started && line_indent == step_indent + 2 &&
+          $0 ~ /^[[:space:]]*if:[[:space:]]*/) {
+        step_non_gating = 1
         next
       }
       if (step_started && with_indent >= 0 && line_indent == with_indent + 2 &&

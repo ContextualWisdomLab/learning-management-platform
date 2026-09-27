@@ -13,12 +13,15 @@ toolchain. Its bounded YAML structure scanner admits commands only from
 `jobs.*.steps[]` step-level `run` blocks and admits toolchain pins only from
 SHA-pinned `dtolnay/rust-toolchain` steps under `with.toolchain`. Required
 quality commands must match exactly and run in steps without
-non-false `continue-on-error`; dynamic expressions therefore fail closed. The
-contract itself runs in a separate required step. Mutation tests prove
-comments, unrelated fields, nested block scalars, trailing shell operators,
-and literal or expression-based non-gating steps cannot impersonate the
-required gate. Central required workflows provide independent security
-evidence.
+non-false `continue-on-error`, an `if` condition, or an `exit` command. Jobs
+containing the gate must also be unconditional and may use only explicit
+`continue-on-error: false`; dynamic expressions therefore fail closed. The
+contract itself runs in a separate required step. Eighteen rejection mutations
+prove comments, unrelated fields, nested block scalars, trailing shell
+operators, conditional jobs or steps, early successful exits, and literal or
+expression-based failure tolerance cannot impersonate the required gate.
+Explicit-false job and step controls prove the safe form remains accepted.
+Central required workflows provide independent security evidence.
 
 Future database, HTTP, and UI slices require realistic PostgreSQL migration and
 rollback tests, async load evidence, authorization tests, and browser E2E tests;
