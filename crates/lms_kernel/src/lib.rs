@@ -50,6 +50,8 @@ pub struct LearningAffiliation {
     pub affiliation_id: Uuid,
     /// The role represented by this affiliation.
     pub affiliation_kind: AffiliationKind,
+    /// The opaque Orgmetra worker reference required only for employees.
+    pub orgmetra_worker_reference: Option<String>,
     /// The inclusive start of the valid-time interval.
     pub valid_from: DateTime<Utc>,
     /// The exclusive end of the valid-time interval, if known.
@@ -57,11 +59,12 @@ pub struct LearningAffiliation {
 }
 
 impl LearningAffiliation {
-    /// Creates an affiliation and rejects an empty or inverted valid-time interval.
+    /// Creates an affiliation with a valid worker link and valid-time interval.
     pub fn new(
         tenant_id: Uuid,
         learner_id: Uuid,
         affiliation_kind: AffiliationKind,
+        orgmetra_worker_reference: Option<String>,
         valid_from: DateTime<Utc>,
         valid_to: Option<DateTime<Utc>>,
     ) -> Result<Self, KernelError> {
@@ -71,11 +74,21 @@ impl LearningAffiliation {
         if valid_to.is_some_and(|end| end <= valid_from) {
             return Err(KernelError::InvalidValidityInterval);
         }
+        match (&affiliation_kind, &orgmetra_worker_reference) {
+            (AffiliationKind::Employee, Some(worker_reference))
+                if !worker_reference.trim().is_empty() => {}
+            (AffiliationKind::Employee, _) => {
+                return Err(KernelError::MissingOrgmetraWorkerReference);
+            }
+            (_, Some(_)) => return Err(KernelError::UnexpectedOrgmetraWorkerReference),
+            (_, None) => {}
+        }
         Ok(Self {
             tenant_id,
             learner_id,
             affiliation_id: Uuid::new_v4(),
             affiliation_kind,
+            orgmetra_worker_reference,
             valid_from,
             valid_to,
         })
@@ -223,6 +236,12 @@ pub enum KernelError {
     /// A valid-time interval is empty or inverted.
     #[error("validity interval must end after it starts")]
     InvalidValidityInterval,
+    /// An employee affiliation lacks its required Orgmetra worker reference.
+    #[error("employee affiliation requires a nonblank Orgmetra worker reference")]
+    MissingOrgmetraWorkerReference,
+    /// A non-employee affiliation attempted to store an employee-only reference.
+    #[error("Orgmetra worker reference is allowed only for employee affiliations")]
+    UnexpectedOrgmetraWorkerReference,
     /// A policy revision is incomplete.
     #[error("policy revision must have a positive revision number and at least one requirement")]
     InvalidPolicyRevision,
@@ -374,6 +393,7 @@ mod tests {
             tenant_id,
             learner_id,
             AffiliationKind::Partner,
+            None,
             DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp"),
             None,
         )
@@ -390,6 +410,7 @@ mod tests {
             Uuid::from_u128(10),
             learner_id,
             AffiliationKind::Customer,
+            None,
             at,
             None,
         )
@@ -398,6 +419,7 @@ mod tests {
             Uuid::from_u128(11),
             learner_id,
             AffiliationKind::SelfSponsored,
+            None,
             at,
             None,
         )
@@ -411,6 +433,76 @@ mod tests {
     }
 
     #[test]
+    fn employee_affiliation_requires_a_nonblank_orgmetra_worker_reference() {
+        let (tenant_id, learner_id) = ids();
+        let at = DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp");
+
+        for worker_reference in [None, Some("   ".to_owned())] {
+            assert_eq!(
+                LearningAffiliation::new(
+                    tenant_id,
+                    learner_id,
+                    AffiliationKind::Employee,
+                    worker_reference,
+                    at,
+                    None,
+                ),
+                Err(KernelError::MissingOrgmetraWorkerReference)
+            );
+        }
+    }
+
+    #[test]
+    fn employee_affiliation_preserves_its_orgmetra_worker_reference() {
+        let (tenant_id, learner_id) = ids();
+        let affiliation = LearningAffiliation::new(
+            tenant_id,
+            learner_id,
+            AffiliationKind::Employee,
+            Some("worker-42".to_owned()),
+            DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp"),
+            None,
+        )
+        .expect("employee affiliation with a worker reference");
+
+        assert_eq!(
+            affiliation.orgmetra_worker_reference.as_deref(),
+            Some("worker-42")
+        );
+    }
+
+    #[test]
+    fn every_non_employee_affiliation_rejects_an_orgmetra_worker_reference() {
+        let (tenant_id, learner_id) = ids();
+        let at = DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp");
+        let non_employee_kinds = [
+            AffiliationKind::Contractor,
+            AffiliationKind::Partner,
+            AffiliationKind::Customer,
+            AffiliationKind::Candidate,
+            AffiliationKind::Student,
+            AffiliationKind::Guardian,
+            AffiliationKind::AssociationMember,
+            AffiliationKind::PublicLearner,
+            AffiliationKind::SelfSponsored,
+        ];
+
+        for affiliation_kind in non_employee_kinds {
+            assert_eq!(
+                LearningAffiliation::new(
+                    tenant_id,
+                    learner_id,
+                    affiliation_kind,
+                    Some("worker-42".to_owned()),
+                    at,
+                    None,
+                ),
+                Err(KernelError::UnexpectedOrgmetraWorkerReference)
+            );
+        }
+    }
+
+    #[test]
     fn rejects_inverted_affiliation_intervals() {
         let (tenant_id, learner_id) = ids();
         let start = DateTime::from_timestamp(1_700_000_001, 0).expect("fixed timestamp");
@@ -418,6 +510,7 @@ mod tests {
             tenant_id,
             learner_id,
             AffiliationKind::Employee,
+            Some("worker-42".to_owned()),
             start,
             Some(start),
         );

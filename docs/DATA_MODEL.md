@@ -26,7 +26,7 @@ Initial entities:
 - `completion_decision`
 - `credential_record`
 
-A learner is not assumed to be an employee, login account, payer, or contracting organization. Optional employment linkage is represented as an effective-dated `learning_affiliation` or external worker reference with `valid_from` and `valid_to`; no employee row is synthesized for a non-employee learner.
+A learner is not assumed to be an employee, login account, payer, or contracting organization. The Rust domain kernel requires an opaque Orgmetra worker reference only when `affiliation_kind` is `employee` and rejects that reference for all non-employee kinds. The current PostgreSQL migration represents effective-dated `learning_affiliation` rows with `valid_from` and `valid_to` but does not yet persist the worker reference; that schema/API projection remains a dependent change. No employee row is synthesized for a non-employee learner.
 
 `login_identity_reference` is a global opaque reference to an identity authority and external subject. `learner_profile` links one such identity to a stable learner, while `tenant_membership` grants tenant-scoped participation. This permits one identity to have memberships in several tenants without copying credentials or treating a login identity as an employee.
 
