@@ -58,6 +58,42 @@ for continue_on_error_value in "true" "TRUE" '${{ true }}'; do
 done
 
 mutated_workflow="$(mktemp)"
+sed '/^      - name: Format, lint, test, and measure owned production code$/a\        if: false' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted quality commands in a conditionally skipped step' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed '/^  rust-quality:$/a\    continue-on-error: true' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted quality commands in a non-gating job' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
+sed '/^          cargo +1.90.0 fmt --all --check$/i\          exit 0' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted quality commands after an early successful exit' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
 sed '/^      - name: Format, lint, test, and measure owned production code$/a\        continue-on-error: false' \
   "$workflow" > "$mutated_workflow"
 WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh
