@@ -30,11 +30,13 @@ drifting. Its bounded structure scanner recognizes only actual
 `dtolnay/rust-toolchain` `with.toolchain` values. Required commands are exact
 and must belong to gating steps; contract enforcement is a separate required
 step. Mutation tests prove comments, unrelated fields, nested YAML block
-scalars, trailing shell operators, and `continue-on-error: true` cannot satisfy
-that contract. CI also checks the exact submitted SHA, uses SHA-pinned GitHub
-Actions, verifies the cargo-llvm-cov archive hash, denies Clippy warnings, and
-requires 100% owned production line and branch coverage. Central organization
-workflows own CodeQL, Semgrep, secret scanning, SBOM, and provenance gates.
+scalars, trailing shell operators, and literal or expression-based
+`continue-on-error` cannot satisfy that contract. Only explicit `false` is
+accepted; dynamic expressions fail closed. CI also checks the exact submitted
+SHA, uses SHA-pinned GitHub Actions, verifies the cargo-llvm-cov archive hash,
+denies Clippy warnings, and requires 100% owned production line and branch
+coverage. Central organization workflows own CodeQL, Semgrep, secret scanning,
+SBOM, and provenance gates.
 
 ## Deferred adapters
 
