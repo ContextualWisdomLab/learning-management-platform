@@ -136,6 +136,18 @@ fi
 rm -f "$mutated_workflow"
 
 mutated_workflow="$(mktemp)"
+sed '/^          cargo +1.90.0 fmt --all --check$/i\          exec true' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract accepted quality commands after a successful shell replacement' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
 sed \
   -e '/^          cargo +1.90.0 fmt --all --check$/i\          exit 0' \
   -e '/^          git diff --exit-code$/a\        continue-on-error: false' \
