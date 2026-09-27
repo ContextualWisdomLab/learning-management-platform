@@ -16,11 +16,13 @@ quality commands must match exactly and run in steps without
 non-false `continue-on-error`, an `if` condition, or an `exit` command. Jobs
 containing the gate must also be unconditional and may use only explicit
 `continue-on-error: false`; dynamic expressions therefore fail closed. The
-contract itself runs in a separate required step. Eighteen rejection mutations
+contract itself runs in a separate required step. Nineteen rejection mutations
 prove comments, unrelated fields, nested block scalars, trailing shell
 operators, conditional jobs or steps, early successful exits, and literal or
 expression-based failure tolerance cannot impersonate the required gate.
 Explicit-false job and step controls prove the safe form remains accepted.
+Non-gating state is monotonic, so an explicit-false property cannot override a
+condition detected earlier in the same step.
 Central required workflows provide independent security evidence.
 
 Future database, HTTP, and UI slices require realistic PostgreSQL migration and

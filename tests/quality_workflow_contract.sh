@@ -136,7 +136,9 @@ workflow_records() {
         value = $0
         sub(/^[[:space:]]*continue-on-error:[[:space:]]*/, "", value)
         sub(/[[:space:]]*#.*/, "", value)
-        step_non_gating = (tolower(trim(value)) != "false")
+        if (tolower(trim(value)) != "false") {
+          step_non_gating = 1
+        }
         next
       }
       if (step_started && line_indent == step_indent + 2 &&

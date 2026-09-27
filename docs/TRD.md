@@ -33,7 +33,8 @@ step. Mutation tests prove comments, unrelated fields, nested YAML block
 scalars, trailing shell operators, conditional jobs or steps, early `exit`, and
 literal or expression-based `continue-on-error` cannot satisfy that contract.
 Jobs and steps carrying required commands are unconditional; only explicit
-`continue-on-error: false` is accepted, so dynamic expressions fail closed. CI
+`continue-on-error: false` is accepted, so dynamic expressions fail closed and
+cannot reset a previously detected non-gating condition. CI
 also checks the exact submitted SHA, uses SHA-pinned GitHub Actions, verifies
 the cargo-llvm-cov archive hash, denies Clippy warnings, and requires 100% owned
 production line and branch coverage. Central organization workflows own
