@@ -196,7 +196,8 @@ CREATE TABLE learning_registration (
     CONSTRAINT learning_registration_enrollment_fk
         FOREIGN KEY (tenant_id, enrollment_record_id)
         REFERENCES enrollment_record (tenant_id, enrollment_record_id),
-    CONSTRAINT learning_registration_enrollment_unique UNIQUE (tenant_id, enrollment_record_id),
+    CONSTRAINT learning_registration_external_reference_unique
+        UNIQUE (tenant_id, external_registration_reference),
     CONSTRAINT learning_registration_identity_unique UNIQUE (tenant_id, learning_registration_id)
 );
 

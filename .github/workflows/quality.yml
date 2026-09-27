@@ -54,6 +54,12 @@ jobs:
                   if marker in text:
                       raise SystemExit(f"unresolved bootstrap marker {marker!r} in {path}")
 
+          workflow = Path(".github/workflows/quality.yml").read_text(encoding="utf-8")
+          if "|" + " python3" in workflow:
+              raise SystemExit("workflow must not execute curl responses through an interpreter")
+          if "postgres:18-alpine@sha256:" not in workflow:
+              raise SystemExit("PostgreSQL CI service image must be pinned by digest")
+
           print("learning management bootstrap contract validation passed")
 
   rust-kernel:
@@ -61,7 +67,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_DB: lms_kernel_test
           POSTGRES_USER: postgres
@@ -211,26 +217,47 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
             --header 'content-type: application/json' --data '{}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$nil_id/enrollments/$nil_id/registrations")" = '401'
-          offering_id=$(curl --fail --silent --show-error --request POST \
+          curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
             --data '{"offering_name":"Partner Academy Basics","content_release_reference":"content-release/v1/partner-basics"}' \
-            "http://127.0.0.1:8080/v1/tenants/$tenant_id/offerings" \
-            | python3 -c 'import json, sys; print(json.load(sys.stdin)["course_offering_id"])')
-          entitlement_id=$(curl --fail --silent --show-error --request POST \
+            --output "$RUNNER_TEMP/offering_response.json" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/offerings"
+          offering_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["course_offering_id"])' "$RUNNER_TEMP/offering_response.json")
+          curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
             --data '{"source_authority":"billing-control-plane","external_entitlement_reference":"entitlement-ci-1","source_digest":"sha256:ci","source_version":"v1"}' \
-            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/entitlements" \
-            | python3 -c 'import json, sys; print(json.load(sys.stdin)["access_entitlement_id"])')
-          enrollment_id=$(curl --fail --silent --show-error --request POST \
+            --output "$RUNNER_TEMP/entitlement_response.json" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/entitlements"
+          entitlement_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["access_entitlement_id"])' "$RUNNER_TEMP/entitlement_response.json")
+          curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
             --data "{\"course_offering_id\":\"$offering_id\",\"access_entitlement_id\":\"$entitlement_id\"}" \
-            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments" \
-            | python3 -c 'import json, sys; print(json.load(sys.stdin)["enrollment_record_id"])')
+            --output "$RUNNER_TEMP/enrollment_response.json" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments"
+          enrollment_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["enrollment_record_id"])' "$RUNNER_TEMP/enrollment_response.json")
           curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
             --data '{"external_registration_reference":"registration-ci-1"}' \
-            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments/$enrollment_id/registrations" \
-            | python3 -c 'import json, sys; assert json.load(sys.stdin)["registration_status"] == "registered"'
+            --output "$RUNNER_TEMP/registration_response.json" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments/$enrollment_id/registrations"
+          registration_id=$(python3 -c 'import json, sys; response=json.load(open(sys.argv[1], encoding="utf-8")); assert response["registration_status"] == "registered"; print(response["learning_registration_id"])' "$RUNNER_TEMP/registration_response.json")
+          PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 \
+            --command "BEGIN; SET LOCAL app.tenant_id = '$tenant_id'; UPDATE learning_registration SET registration_status = 'closed' WHERE tenant_id = '$tenant_id' AND learning_registration_id = '$registration_id'; COMMIT;"
+          test "$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"external_registration_reference":"registration-ci-2"}' \
+            --output "$RUNNER_TEMP/reregistration_response.json" --write-out '%{http_code}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments/$enrollment_id/registrations")" = '201'
+          python3 -c 'import json, sys; assert json.load(open(sys.argv[1], encoding="utf-8"))["registration_status"] == "registered"' "$RUNNER_TEMP/reregistration_response.json"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"external_registration_reference":"registration-ci-2"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments/$enrollment_id/registrations")" = '409'
+          test "$(PGPASSWORD=ci-only psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SET app.tenant_id = '$tenant_id'" \
+            --command "SELECT count(*) FROM learning_registration WHERE tenant_id = '$tenant_id' AND enrollment_record_id = '$enrollment_id'")" = '2'
           test "$(PGPASSWORD=ci-only psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
             --tuples-only --no-align \
             --command "SET app.tenant_id = '$tenant_id'" \
