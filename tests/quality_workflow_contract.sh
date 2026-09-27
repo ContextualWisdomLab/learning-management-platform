@@ -43,7 +43,7 @@ workflow_records() {
           if (command != "" && command !~ /^#/) {
             step_command_count++
             step_commands[step_command_count] = command
-            if (command ~ /(^|[;&|][[:space:]]*)exit([[:space:]]|$)/) {
+            if (command ~ /(^|[;&|][[:space:]]*)exit([[:space:];]|$)/) {
               step_non_gating = 1
             }
           }

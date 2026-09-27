@@ -16,10 +16,11 @@ quality commands must match exactly and run in steps without
 non-false `continue-on-error`, an `if` condition, or an `exit` command. Jobs
 containing the gate must also be unconditional and may use only explicit
 `continue-on-error: false`; dynamic expressions therefore fail closed. The
-contract itself runs in a separate required step. Twenty rejection mutations
-prove comments, unrelated fields, nested block scalars, trailing shell
+contract itself runs in a separate required step. Twenty-one rejection
+mutations prove comments, unrelated fields, nested block scalars, trailing shell
 operators, conditional jobs or steps, early successful exits, and literal or
-expression-based failure tolerance cannot impersonate the required gate.
+expression-based failure tolerance cannot impersonate the required gate. Bare
+`exit;` is treated as an early exit even without a numeric status.
 Explicit-false job and step controls prove the safe form remains accepted.
 Non-gating state is monotonic, so an explicit-false property cannot override a
 condition or early exit detected earlier in the same step.

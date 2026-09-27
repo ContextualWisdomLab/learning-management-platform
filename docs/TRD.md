@@ -30,8 +30,9 @@ drifting. Its bounded structure scanner recognizes only actual
 `dtolnay/rust-toolchain` `with.toolchain` values. Required commands are exact
 and must belong to gating steps; contract enforcement is a separate required
 step. Mutation tests prove comments, unrelated fields, nested YAML block
-scalars, trailing shell operators, conditional jobs or steps, early `exit`, and
-literal or expression-based `continue-on-error` cannot satisfy that contract.
+scalars, trailing shell operators, conditional jobs or steps, early `exit`
+(including bare `exit;`), and literal or expression-based `continue-on-error`
+cannot satisfy that contract.
 Jobs and steps carrying required commands are unconditional; only explicit
 `continue-on-error: false` is accepted, so dynamic expressions fail closed and
 cannot reset a previously detected non-gating condition. CI
