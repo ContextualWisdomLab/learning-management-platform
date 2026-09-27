@@ -124,6 +124,20 @@ fi
 rm -f "$mutated_workflow"
 
 mutated_workflow="$(mktemp)"
+sed \
+  -e '/^          cargo +1.90.0 fmt --all --check$/i\          exit 0' \
+  -e '/^          git diff --exit-code$/a\        continue-on-error: false' \
+  "$workflow" > "$mutated_workflow"
+
+if WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'contract let explicit false override an early successful exit' >&2
+  rm -f "$mutated_workflow"
+  exit 1
+fi
+rm -f "$mutated_workflow"
+
+mutated_workflow="$(mktemp)"
 sed '/^      - name: Format, lint, test, and measure owned production code$/a\        continue-on-error: false' \
   "$workflow" > "$mutated_workflow"
 WORKFLOW_PATH="$mutated_workflow" bash tests/quality_workflow_contract.sh
