@@ -26,7 +26,7 @@ Initial entities:
 - `completion_decision`
 - `credential_record`
 
-A learner is not assumed to be an employee, login account, payer, or contracting organization. Optional employment linkage is represented as an effective-dated `learning_affiliation` or external worker reference with `valid_from` and `valid_to`; no employee row is synthesized for a non-employee learner.
+A learner is not assumed to be an employee, login account, payer, or contracting organization. The Rust domain kernel requires an opaque Orgmetra worker reference only when `affiliation_kind` is `employee` and rejects that reference for all non-employee kinds. The current PostgreSQL migration represents effective-dated `learning_affiliation` rows with `valid_from` and `valid_to` but does not yet persist the worker reference; that schema/API projection remains a dependent change. No employee row is synthesized for a non-employee learner.
 
 `login_identity_reference` is a global opaque reference to an identity authority and external subject. `learner_profile` links one such identity to a stable learner, while `tenant_membership` grants tenant-scoped participation. This permits one identity to have memberships in several tenants without copying credentials or treating a login identity as an employee.
 
@@ -54,7 +54,7 @@ course_offering 1 ---- * enrollment_record
 
 `access_entitlement` is a versioned local reference/projection of an entitlement owned by the Billing Control Plane or another authorized entitlement authority. It stores the external entitlement reference, source authority, effective interval, and observed version/digest. It does not store provider payment objects or become the authoritative commercial permission record.
 
-The executable registration path creates a `course_offering`, projects an active `access_entitlement` only for an active tenant membership, creates an `enrollment_record` only when the offering and entitlement are active for the same learner, and creates one `learning_registration` for that enrollment. The migration uses tenant-scoped composite foreign keys and RLS for each relation; external billing and content payloads remain out of the database.
+The executable registration path creates a `course_offering`, projects an active `access_entitlement` only for an active tenant membership, creates an `enrollment_record` only when the offering and entitlement are active for the same learner, and creates a `learning_registration` for that enrollment. An enrollment may be registered again after a prior registration closes; each tenant-scoped external registration reference remains unique so replay of the same authority fact fails closed. The migration uses tenant-scoped composite foreign keys and RLS for each relation; external billing and content payloads remain out of the database.
 
 All authoritative facts are normalized to 3NF; repeated names, provider payloads, and external-system facts are referenced through dedicated identifiers rather than embedded denormalized copies.
 

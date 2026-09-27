@@ -38,6 +38,7 @@ CREATE TABLE learning_affiliation (
     tenant_id uuid NOT NULL,
     learner_id uuid NOT NULL,
     affiliation_kind text NOT NULL,
+    orgmetra_worker_reference text,
     valid_from timestamptz NOT NULL,
     valid_to timestamptz,
     validity_range tstzrange GENERATED ALWAYS AS (
@@ -47,6 +48,10 @@ CREATE TABLE learning_affiliation (
         FOREIGN KEY (tenant_id, learner_id)
         REFERENCES tenant_membership (tenant_id, learner_id),
     CONSTRAINT learning_affiliation_validity_check CHECK (valid_to IS NULL OR valid_to > valid_from),
+    CONSTRAINT learning_affiliation_worker_reference_check CHECK (
+        (affiliation_kind = 'employee' AND orgmetra_worker_reference IS NOT NULL AND btrim(orgmetra_worker_reference) <> '')
+        OR (affiliation_kind <> 'employee' AND orgmetra_worker_reference IS NULL)
+    ),
     CONSTRAINT learning_affiliation_non_overlapping
         EXCLUDE USING gist (tenant_id WITH =, learner_id WITH =, affiliation_kind WITH =, validity_range WITH &&)
 );
@@ -196,7 +201,8 @@ CREATE TABLE learning_registration (
     CONSTRAINT learning_registration_enrollment_fk
         FOREIGN KEY (tenant_id, enrollment_record_id)
         REFERENCES enrollment_record (tenant_id, enrollment_record_id),
-    CONSTRAINT learning_registration_enrollment_unique UNIQUE (tenant_id, enrollment_record_id),
+    CONSTRAINT learning_registration_external_reference_unique
+        UNIQUE (tenant_id, external_registration_reference),
     CONSTRAINT learning_registration_identity_unique UNIQUE (tenant_id, learning_registration_id)
 );
 

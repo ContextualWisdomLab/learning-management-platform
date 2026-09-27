@@ -4,7 +4,7 @@ A standards-oriented learning-management system for employees, customers, partne
 
 ## Scope
 
-The platform owns learning offerings, enrollment, learner affiliations, progression projections, and versioned completion decisions. Employment linkage is optional rather than assumed.
+The platform owns learning offerings, enrollment, learner affiliations, progression projections, and versioned completion decisions. Employment linkage is optional rather than assumed: employee affiliations require an opaque Orgmetra worker reference, while every non-employee affiliation rejects one.
 
 Identity remains in Keyverse; authored releases remain in Learning Content Studio; observed learning activity remains in the Learning Record Store; assessment response/result authority remains in Psychometrics Commons; commercial entitlement remains in the Billing Control Plane.
 
@@ -26,4 +26,8 @@ See `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/product-technical-gap-ba
 
 ## Executable kernel
 
-The current implementation branch contains a Rust domain kernel, a PostgreSQL migration, and a small learner-affiliation/registration/enrollment HTTP adapter. Run the domain checks with `cargo test --workspace --all-targets --locked`; run the API with `DATABASE_URL=postgres://... cargo run --bin lms_api`. The API applies `migrations/0001_learning_kernel.sql` on startup, exposes `GET /healthz`, and supports the bounded path `learners → affiliations → offerings → entitlements → enrollments → registrations` using opaque identity references. CI connects the API as a `NOSUPERUSER NOBYPASSRLS` role and rehearses a disposable migration drop-and-reapply through `scripts/postgres_rollback_rehearsal.sql`; this is executable evidence, not a production rollback claim. External identity, content, evidence, assessment, and billing adapters remain separate follow-up contracts.
+The current implementation branch contains a Rust domain kernel, a PostgreSQL migration, and a small learner-affiliation/registration/enrollment HTTP adapter. Employee affiliations require an opaque Orgmetra worker reference; all nine non-employee kinds reject that field. Run the domain checks with `cargo test --workspace --all-targets --locked`; apply `migrations/0001_learning_kernel.sql` with a dedicated migration role; then run the API with a separate `NOSUPERUSER NOBYPASSRLS` application role that owns no tables and cannot create in the application schema.
+
+The adapter requires `LMS_TENANT_API_KEY_SHA256` as a non-empty JSON object that maps each authorized tenant UUID to the lowercase SHA-256 digest of its bootstrap bearer key. Every tenant-scoped write endpoint accepts `Authorization: Bearer <key>` only when that key is bound to the requested tenant. This fail-closed bootstrap seam is not a Keyverse/OIDC conformance claim; the released Keyverse identity contract remains follow-up work.
+
+The API exposes `GET /healthz` and supports the bounded path `learners → offerings → entitlements → enrollments → registrations` using opaque external references. CI proves unauthenticated rejection, token-to-tenant authorization, a cross-tenant RLS write rejection, a non-owner application role, forced-RLS policies, and disposable migration rollback/reapply under the separate migration role. External identity, content, evidence, assessment, and billing adapters remain separate follow-up contracts.
