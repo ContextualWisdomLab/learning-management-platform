@@ -113,15 +113,6 @@ jobs:
         run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
       - name: Install pinned Rust components
         run: rustup component add rustfmt clippy --toolchain 1.97.1
-      - name: Regenerate dependency lock for the reviewed feature set
-        run: cargo +1.97.1 generate-lockfile
-      - name: Upload regenerated dependency lock
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: pr4-cargo-lock-${{ github.event.pull_request.head.sha || github.sha }}
-          path: Cargo.lock
-          if-no-files-found: error
-          retention-days: 1
       - name: Check formatting
         run: cargo +1.97.1 fmt --all -- --check
       - name: Run domain and adapter tests

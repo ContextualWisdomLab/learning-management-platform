@@ -18,4 +18,5 @@
 
 ### Fixed
 
+- Commit the Rust 1.97.1 dependency lock and stop resolving mutable dependency versions inside CI.
 - Restrict initial learner registration to `active` membership so a first registration cannot create an `ended` or `suspended` membership that has no transition path back to active.
