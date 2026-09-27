@@ -26,7 +26,7 @@ Partner & Customer Academy: external learner onboarding, sponsor or self entitle
 
 ## Executable baseline
 
-The current implementation slice is `crates/lms_kernel`: Rust domain rules enforce non-employee affiliations, effective dates, tenant/learner evidence boundaries, and replay fingerprints. `crates/lms_kernel/src/bin/lms_api.rs` provides health and bearer-authorized learner registration backed by `migrations/0001_learning_kernel.sql`.
+The current implementation slice is `crates/lms_kernel`: Rust domain rules require a nonblank opaque Orgmetra worker reference for an `employee` affiliation, reject that employee-only reference for all nine non-employee affiliation kinds, enforce effective dates and tenant/learner evidence boundaries, and calculate replay fingerprints. `crates/lms_kernel/src/bin/lms_api.rs` provides health and bearer-authorized learner registration backed by `migrations/0001_learning_kernel.sql`. Persisting the worker-reference projection and accepting it at the affiliation API remain dependent work; the kernel rule is not an Orgmetra contract-release claim.
 
 Migration and request execution are separate trust boundaries. A dedicated `NOSUPERUSER NOBYPASSRLS` migration role owns and applies the schema; the application role is also `NOSUPERUSER NOBYPASSRLS` but owns no tables, cannot create in the application schema, and receives only the DML privileges needed by the registration slice. All eight tenant-owned relations use forced RLS. The adapter derives `app.tenant_id` only after the supplied bearer key's SHA-256 digest matches the configured digest for the requested tenant.
 

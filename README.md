@@ -4,7 +4,7 @@ A standards-oriented learning-management system for employees, customers, partne
 
 ## Scope
 
-The platform owns learning offerings, enrollment, learner affiliations, progression projections, and versioned completion decisions. Employment linkage is optional rather than assumed.
+The platform owns learning offerings, enrollment, learner affiliations, progression projections, and versioned completion decisions. Employment linkage is optional rather than assumed: employee affiliations require an opaque Orgmetra worker reference, while every non-employee affiliation rejects one.
 
 Identity remains in Keyverse; authored releases remain in Learning Content Studio; observed learning activity remains in the Learning Record Store; assessment response/result authority remains in Psychometrics Commons; commercial entitlement remains in the Billing Control Plane.
 

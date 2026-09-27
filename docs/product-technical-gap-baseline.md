@@ -1,6 +1,6 @@
 # Product and technical gap baseline
 
-**As of:** 2026-08-20  
+**As of:** 2026-09-27
 **Status:** Baseline for implementation planning; not a product-readiness or standards-conformance claim.
 
 ## Executive verdict
@@ -14,8 +14,8 @@ The next customer-visible milestone is not another document: a tenant-isolated l
 | Evidence | Observed fact | Consequence |
 |---|---|---|
 | `develop@1b89a16bbbd6c4b7c6ee4e8b81e2c8c651d1ce2c` | Contains only the bootstrap `README.md`. | No runtime behavior exists on the base branch. |
-| PR [#1](https://github.com/ContextualWisdomLab/learning-management-platform/pull/1), exact head `973f899` | Adds governance, architecture, data-model, ADR, standards, exact-head quality validation, explicit evidence-metadata allowlisting, and registration-to-decision cardinality. It remains open with review and checks pending. | The bootstrap is not merged evidence and must not be described as implemented LMS behavior. |
-| PR [#4](https://github.com/ContextualWisdomLab/learning-management-platform/pull/4), current head `fe1b890` | Adds the tenant-safe learner kernel and API smoke path; its CI now uses a `NOSUPERUSER NOBYPASSRLS` application role, covers customer/self-sponsored and multi-tenant affiliation cases, and rehearses disposable migration rollback/reapply. | It remains open with independent review and current protected checks required; it is not merged product evidence. |
+| PR [#1](https://github.com/ContextualWisdomLab/learning-management-platform/pull/1), exact head `562d620426b791b3dbf054a18179401346e6e630` | Adds governance, architecture, data-model, ADR, standards, exact-head quality validation, explicit evidence-metadata allowlisting, and registration-to-decision cardinality. It remains open as a Draft. | The bootstrap is not merged evidence and must not be described as implemented LMS behavior. |
+| PR [#4](https://github.com/ContextualWisdomLab/learning-management-platform/pull/4), canonical owner branch `feat/external-learner-kernel` | Adds the tenant-safe learner kernel and API smoke path. The owner repair adds a tested employee-only Orgmetra worker-reference invariant while preserving all nine non-employee kinds; PostgreSQL/API projection is still dependent work. | It remains open as a Draft with independent review and current protected checks required; it is not merged product evidence. |
 | Failed run `32262959841` on predecessor head `1edc471` | The quality workflow required `docs/adr/0001-lms-authority-boundary.md`, while the committed ADR was `docs/adr/0001-learning-authority-boundary.md`. | PR commit `cdda6ec` corrects the shared path contract; a new exact-head green run is still required. |
 | Issue [#2](https://github.com/ContextualWisdomLab/learning-management-platform/issues/2) | Defines the repository boundary, modular-monolith slices, PostgreSQL 3NF, adapters, accessibility, and evidence gates. | This is the foundation backlog, not delivered functionality. |
 | Issue [#3](https://github.com/ContextualWisdomLab/learning-management-platform/issues/3) | Defines the external-learner vertical and acceptance criteria for identity separation, effective dating, replayable completion, tenancy, and coverage. | This is the first product slice to implement after the bootstrap merges. |
@@ -116,7 +116,7 @@ Production readiness requires CSAP and SOC 2 control mapping, SBOM and provenanc
 | ID | Priority | Buyer-visible gap | Current evidence | Exit evidence | Next change |
 |---|---:|---|---|---|---|
 | G-01 | P0 | No merged executable LMS kernel or API | PR #4 adds the Rust kernel, health endpoint, and learner registration smoke path | Running service with documented health and tenant context on a merged exact head | Merge foundation stack after independent review and current checks |
-| G-02 | P0 | No learner/identity/employee/sponsor/payer separation | Documented only in PR #1 | Real PostgreSQL schema and integration tests for all roles | Implement learner registry and tenant authorization |
+| G-02 | P0 | No learner/identity/employee/sponsor/payer separation | PR #4 kernel requires an employee worker reference and rejects it for all nine non-employee kinds; the PostgreSQL/API projection remains open | Real PostgreSQL schema and integration tests for all roles | Carry the kernel invariant through the dependent affiliation schema/API stack |
 | G-03 | P0 | No external learner enrollment path | Issue #3 only | Non-employee journey passes browser/API E2E | Implement catalog, entitlement projection, enrollment, registration |
 | G-04 | P0 | No time-aware affiliation or correction model | Requirements only | Effective-dated and replay/correction tests pass | Add valid-time and decision transaction metadata |
 | G-05 | P0 | No versioned external contracts | PR #1 lists planned identifiers only | Schemas, clients, contract tests, idempotent adapters | Add integration package and outbox |
@@ -134,10 +134,10 @@ For every open PR: re-fetch the exact head, inspect all review threads, correct 
 
 The current loop is:
 
-1. PR #1: validate `cdda6ec`, obtain an independent current-head review, then merge only when the live rules permit it.
-2. Issue #2: add the executable modular-monolith foundation and repository gates.
-3. Issue #3: stack the external-learner vertical on that foundation and prove the real journey.
-4. Add the product gaps found by runtime evidence as the next bounded PR, not as speculative scaffolding.
+1. PR #1: keep the bootstrap Draft until its exact head is reviewed and its current checks pass.
+2. PR #4: integrate the employee-only Orgmetra reference invariant in the canonical learner-kernel owner, then obtain current-head review and checks.
+3. Dependent affiliation PRs: carry the invariant through PostgreSQL and API contracts without copying owner code or retiring valid deltas.
+4. Issue #3: prove the external-learner vertical on the repaired stack.
 
 ## Standards and research evidence
 
