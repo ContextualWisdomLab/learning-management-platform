@@ -545,6 +545,67 @@ mod tests {
     }
 
     #[test]
+    fn replay_fingerprint_changes_with_replay_relevant_evidence_metadata() {
+        let (tenant_id, learner_id) = ids();
+        let original = evidence(tenant_id, learner_id, EvidenceKind::Activity);
+        let mut changed = original.clone();
+        changed.source_metadata.source_digest = "digest-2".to_owned();
+        changed.source_metadata.source_version = "v2".to_owned();
+        changed.observed_at =
+            DateTime::from_timestamp(1_700_000_001, 0).expect("fixed timestamp");
+        let policy = CompletionPolicyRevision::new(
+            tenant_id,
+            Uuid::from_u128(3),
+            1,
+            BTreeSet::from([EvidenceKind::Activity]),
+        )
+        .expect("valid policy");
+        let evaluated_at =
+            DateTime::from_timestamp(1_700_000_002, 0).expect("fixed timestamp");
+
+        let first = evaluate_completion(
+            tenant_id,
+            learner_id,
+            policy.clone(),
+            &[original],
+            evaluated_at,
+        )
+        .expect("complete");
+        let changed = evaluate_completion(
+            tenant_id,
+            learner_id,
+            policy,
+            &[changed],
+            evaluated_at,
+        )
+        .expect("complete");
+
+        assert_ne!(first.replay_fingerprint, changed.replay_fingerprint);
+    }
+
+    #[test]
+    fn deserialization_cannot_bypass_affiliation_and_policy_validation() {
+        let invalid_affiliation = serde_json::json!({
+            "tenant_id": Uuid::from_u128(1),
+            "learner_id": Uuid::from_u128(2),
+            "affiliation_id": Uuid::from_u128(3),
+            "affiliation_kind": "employee",
+            "orgmetra_worker_reference": null,
+            "valid_from": "2023-11-14T22:13:20Z",
+            "valid_to": null
+        });
+        assert!(serde_json::from_value::<LearningAffiliation>(invalid_affiliation).is_err());
+
+        let invalid_policy = serde_json::json!({
+            "tenant_id": Uuid::from_u128(1),
+            "policy_id": Uuid::from_u128(3),
+            "revision_number": 0,
+            "required_evidence_kinds": []
+        });
+        assert!(serde_json::from_value::<CompletionPolicyRevision>(invalid_policy).is_err());
+    }
+
+    #[test]
     fn rejects_missing_and_cross_tenant_evidence() {
         let (tenant_id, learner_id) = ids();
         let policy = CompletionPolicyRevision::new(

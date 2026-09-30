@@ -439,6 +439,22 @@ mod tests {
     }
 
     #[test]
+    fn plaintext_listener_accepts_only_loopback_addresses() {
+        for address in ["127.0.0.1:8080", "[::1]:8080"] {
+            let address = address.parse().expect("valid socket address");
+            validate_bind_address(address).expect("loopback is allowed");
+        }
+
+        for address in ["0.0.0.0:8080", "[::]:8080", "192.0.2.1:8080"] {
+            let address = address.parse().expect("valid socket address");
+            assert!(matches!(
+                validate_bind_address(address),
+                Err(ConfigurationError::ExternalPlaintextBinding)
+            ));
+        }
+    }
+
+    #[test]
     fn initial_registration_requires_active_membership() {
         validate_initial_membership_status("active").expect("active registration is allowed");
 
