@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeSet, HashSet};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -41,21 +41,33 @@ pub enum AffiliationKind {
 
 /// A time-bounded learner affiliation within a tenant.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "LearningAffiliationData")]
 pub struct LearningAffiliation {
     /// The tenant that owns the affiliation.
-    pub tenant_id: Uuid,
+    tenant_id: Uuid,
     /// The learner receiving the affiliation.
-    pub learner_id: Uuid,
+    learner_id: Uuid,
     /// The affiliation record identifier.
-    pub affiliation_id: Uuid,
+    affiliation_id: Uuid,
     /// The role represented by this affiliation.
-    pub affiliation_kind: AffiliationKind,
+    affiliation_kind: AffiliationKind,
     /// The opaque Orgmetra worker reference required only for employees.
-    pub orgmetra_worker_reference: Option<String>,
+    orgmetra_worker_reference: Option<String>,
     /// The inclusive start of the valid-time interval.
-    pub valid_from: DateTime<Utc>,
+    valid_from: DateTime<Utc>,
     /// The exclusive end of the valid-time interval, if known.
-    pub valid_to: Option<DateTime<Utc>>,
+    valid_to: Option<DateTime<Utc>>,
+}
+
+#[derive(Deserialize)]
+struct LearningAffiliationData {
+    tenant_id: Uuid,
+    learner_id: Uuid,
+    affiliation_id: Uuid,
+    affiliation_kind: AffiliationKind,
+    orgmetra_worker_reference: Option<String>,
+    valid_from: DateTime<Utc>,
+    valid_to: Option<DateTime<Utc>>,
 }
 
 impl LearningAffiliation {
@@ -68,13 +80,43 @@ impl LearningAffiliation {
         valid_from: DateTime<Utc>,
         valid_to: Option<DateTime<Utc>>,
     ) -> Result<Self, KernelError> {
-        if tenant_id.is_nil() || learner_id.is_nil() {
+        let affiliation_id = Uuid::new_v4();
+        Self::validate(
+            tenant_id,
+            learner_id,
+            affiliation_id,
+            &affiliation_kind,
+            orgmetra_worker_reference.as_deref(),
+            valid_from,
+            valid_to,
+        )?;
+        Ok(Self {
+            tenant_id,
+            learner_id,
+            affiliation_id,
+            affiliation_kind,
+            orgmetra_worker_reference,
+            valid_from,
+            valid_to,
+        })
+    }
+
+    fn validate(
+        tenant_id: Uuid,
+        learner_id: Uuid,
+        affiliation_id: Uuid,
+        affiliation_kind: &AffiliationKind,
+        orgmetra_worker_reference: Option<&str>,
+        valid_from: DateTime<Utc>,
+        valid_to: Option<DateTime<Utc>>,
+    ) -> Result<(), KernelError> {
+        if tenant_id.is_nil() || learner_id.is_nil() || affiliation_id.is_nil() {
             return Err(KernelError::NilIdentifier);
         }
         if valid_to.is_some_and(|end| end <= valid_from) {
             return Err(KernelError::InvalidValidityInterval);
         }
-        match (&affiliation_kind, &orgmetra_worker_reference) {
+        match (affiliation_kind, orgmetra_worker_reference) {
             (AffiliationKind::Employee, Some(worker_reference))
                 if !worker_reference.trim().is_empty() => {}
             (AffiliationKind::Employee, _) => {
@@ -83,14 +125,66 @@ impl LearningAffiliation {
             (_, Some(_)) => return Err(KernelError::UnexpectedOrgmetraWorkerReference),
             (_, None) => {}
         }
+        Ok(())
+    }
+
+    /// Returns the tenant that owns the affiliation.
+    pub fn tenant_id(&self) -> Uuid {
+        self.tenant_id
+    }
+
+    /// Returns the learner receiving the affiliation.
+    pub fn learner_id(&self) -> Uuid {
+        self.learner_id
+    }
+
+    /// Returns the affiliation record identifier.
+    pub fn affiliation_id(&self) -> Uuid {
+        self.affiliation_id
+    }
+
+    /// Returns the affiliation kind.
+    pub fn affiliation_kind(&self) -> &AffiliationKind {
+        &self.affiliation_kind
+    }
+
+    /// Returns the opaque Orgmetra worker reference, when applicable.
+    pub fn orgmetra_worker_reference(&self) -> Option<&str> {
+        self.orgmetra_worker_reference.as_deref()
+    }
+
+    /// Returns the inclusive start of the valid-time interval.
+    pub fn valid_from(&self) -> DateTime<Utc> {
+        self.valid_from
+    }
+
+    /// Returns the exclusive end of the valid-time interval, when known.
+    pub fn valid_to(&self) -> Option<DateTime<Utc>> {
+        self.valid_to
+    }
+}
+
+impl TryFrom<LearningAffiliationData> for LearningAffiliation {
+    type Error = KernelError;
+
+    fn try_from(value: LearningAffiliationData) -> Result<Self, Self::Error> {
+        Self::validate(
+            value.tenant_id,
+            value.learner_id,
+            value.affiliation_id,
+            &value.affiliation_kind,
+            value.orgmetra_worker_reference.as_deref(),
+            value.valid_from,
+            value.valid_to,
+        )?;
         Ok(Self {
-            tenant_id,
-            learner_id,
-            affiliation_id: Uuid::new_v4(),
-            affiliation_kind,
-            orgmetra_worker_reference,
-            valid_from,
-            valid_to,
+            tenant_id: value.tenant_id,
+            learner_id: value.learner_id,
+            affiliation_id: value.affiliation_id,
+            affiliation_kind: value.affiliation_kind,
+            orgmetra_worker_reference: value.orgmetra_worker_reference,
+            valid_from: value.valid_from,
+            valid_to: value.valid_to,
         })
     }
 }
@@ -193,15 +287,24 @@ impl DecisionEvidenceReference {
 
 /// An immutable revision of a completion policy.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "CompletionPolicyRevisionData")]
 pub struct CompletionPolicyRevision {
     /// The tenant that owns the policy.
-    pub tenant_id: Uuid,
+    tenant_id: Uuid,
     /// The stable policy identifier.
-    pub policy_id: Uuid,
+    policy_id: Uuid,
     /// The immutable revision number.
-    pub revision_number: u32,
+    revision_number: u32,
     /// The evidence categories required to complete.
-    pub required_evidence_kinds: BTreeSet<EvidenceKind>,
+    required_evidence_kinds: BTreeSet<EvidenceKind>,
+}
+
+#[derive(Deserialize)]
+struct CompletionPolicyRevisionData {
+    tenant_id: Uuid,
+    policy_id: Uuid,
+    revision_number: u32,
+    required_evidence_kinds: BTreeSet<EvidenceKind>,
 }
 
 impl CompletionPolicyRevision {
@@ -224,6 +327,39 @@ impl CompletionPolicyRevision {
             revision_number,
             required_evidence_kinds,
         })
+    }
+
+    /// Returns the tenant that owns the policy.
+    pub fn tenant_id(&self) -> Uuid {
+        self.tenant_id
+    }
+
+    /// Returns the stable policy identifier.
+    pub fn policy_id(&self) -> Uuid {
+        self.policy_id
+    }
+
+    /// Returns the immutable revision number.
+    pub fn revision_number(&self) -> u32 {
+        self.revision_number
+    }
+
+    /// Returns the evidence categories required for completion.
+    pub fn required_evidence_kinds(&self) -> &BTreeSet<EvidenceKind> {
+        &self.required_evidence_kinds
+    }
+}
+
+impl TryFrom<CompletionPolicyRevisionData> for CompletionPolicyRevision {
+    type Error = KernelError;
+
+    fn try_from(value: CompletionPolicyRevisionData) -> Result<Self, Self::Error> {
+        Self::new(
+            value.tenant_id,
+            value.policy_id,
+            value.revision_number,
+            value.required_evidence_kinds,
+        )
     }
 }
 
@@ -294,7 +430,7 @@ pub fn evaluate_completion(
         return Err(KernelError::BoundaryMismatch);
     }
 
-    let mut evidence_ids = Vec::with_capacity(evidence.len());
+    let mut evidence_references = Vec::with_capacity(evidence.len());
     let mut evidence_kinds = BTreeSet::new();
     let mut seen_ids = HashSet::with_capacity(evidence.len());
     for reference in evidence {
@@ -304,7 +440,7 @@ pub fn evaluate_completion(
         if !seen_ids.insert(reference.evidence_id) {
             return Err(KernelError::DuplicateEvidence);
         }
-        evidence_ids.push(reference.evidence_id);
+        evidence_references.push(reference);
         evidence_kinds.insert(reference.evidence_kind.clone());
     }
     if !policy_revision
@@ -313,12 +449,16 @@ pub fn evaluate_completion(
     {
         return Err(KernelError::IncompleteEvidence);
     }
-    evidence_ids.sort_unstable();
+    evidence_references.sort_unstable_by_key(|reference| reference.evidence_id);
+    let evidence_ids = evidence_references
+        .iter()
+        .map(|reference| reference.evidence_id)
+        .collect::<Vec<_>>();
     let replay_fingerprint = fingerprint(
         tenant_id,
         learner_id,
         &policy_revision,
-        &evidence_ids,
+        &evidence_references,
         evaluated_at,
     );
     Ok(CompletionDecision {
@@ -336,7 +476,7 @@ fn fingerprint(
     tenant_id: Uuid,
     learner_id: Uuid,
     policy_revision: &CompletionPolicyRevision,
-    evidence_ids: &[Uuid],
+    evidence: &[&DecisionEvidenceReference],
     evaluated_at: DateTime<Utc>,
 ) -> String {
     let mut hasher = Sha256::new();
@@ -344,22 +484,58 @@ fn fingerprint(
     hasher.update(learner_id.as_bytes());
     hasher.update(policy_revision.policy_id.as_bytes());
     hasher.update(policy_revision.revision_number.to_be_bytes());
-    hasher.update(evaluated_at.to_rfc3339().as_bytes());
+    update_length_prefixed(
+        &mut hasher,
+        evaluated_at
+            .to_rfc3339_opts(SecondsFormat::Nanos, true)
+            .as_bytes(),
+    );
     for kind in &policy_revision.required_evidence_kinds {
-        hasher.update(
-            serde_json::to_string(kind)
-                .expect("enum serialization cannot fail")
+        let encoded = serde_json::to_string(kind).expect("enum serialization cannot fail");
+        update_length_prefixed(&mut hasher, encoded.as_bytes());
+    }
+    for reference in evidence {
+        hasher.update(reference.evidence_id.as_bytes());
+        let encoded_kind =
+            serde_json::to_string(&reference.evidence_kind).expect("enum serialization cannot fail");
+        update_length_prefixed(&mut hasher, encoded_kind.as_bytes());
+        update_length_prefixed(
+            &mut hasher,
+            reference.source_metadata.source_authority.as_bytes(),
+        );
+        update_length_prefixed(
+            &mut hasher,
+            reference
+                .source_metadata
+                .source_snapshot_reference
                 .as_bytes(),
         );
-    }
-    for evidence_id in evidence_ids {
-        hasher.update(evidence_id.as_bytes());
+        update_length_prefixed(
+            &mut hasher,
+            reference.source_metadata.source_digest.as_bytes(),
+        );
+        update_length_prefixed(
+            &mut hasher,
+            reference.source_metadata.source_version.as_bytes(),
+        );
+        update_length_prefixed(
+            &mut hasher,
+            reference
+                .observed_at
+                .to_rfc3339_opts(SecondsFormat::Nanos, true)
+                .as_bytes(),
+        );
     }
     hasher
         .finalize()
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+fn update_length_prefixed(hasher: &mut Sha256, value: &[u8]) {
+    hasher.update((value.len() as u64).to_be_bytes());
+    hasher.update(value);
 }
 
 #[cfg(test)]
@@ -548,10 +724,12 @@ mod tests {
     fn replay_fingerprint_changes_with_replay_relevant_evidence_metadata() {
         let (tenant_id, learner_id) = ids();
         let original = evidence(tenant_id, learner_id, EvidenceKind::Activity);
-        let mut changed = original.clone();
-        changed.source_metadata.source_digest = "digest-2".to_owned();
-        changed.source_metadata.source_version = "v2".to_owned();
-        changed.observed_at =
+        let mut changed_digest = original.clone();
+        changed_digest.source_metadata.source_digest = "digest-2".to_owned();
+        let mut changed_version = original.clone();
+        changed_version.source_metadata.source_version = "v2".to_owned();
+        let mut changed_observation = original.clone();
+        changed_observation.observed_at =
             DateTime::from_timestamp(1_700_000_001, 0).expect("fixed timestamp");
         let policy = CompletionPolicyRevision::new(
             tenant_id,
@@ -571,16 +749,17 @@ mod tests {
             evaluated_at,
         )
         .expect("complete");
-        let changed = evaluate_completion(
-            tenant_id,
-            learner_id,
-            policy,
-            &[changed],
-            evaluated_at,
-        )
-        .expect("complete");
-
-        assert_ne!(first.replay_fingerprint, changed.replay_fingerprint);
+        for changed in [changed_digest, changed_version, changed_observation] {
+            let changed = evaluate_completion(
+                tenant_id,
+                learner_id,
+                policy.clone(),
+                &[changed],
+                evaluated_at,
+            )
+            .expect("complete");
+            assert_ne!(first.replay_fingerprint, changed.replay_fingerprint);
+        }
     }
 
     #[test]
@@ -603,6 +782,37 @@ mod tests {
             "required_evidence_kinds": []
         });
         assert!(serde_json::from_value::<CompletionPolicyRevision>(invalid_policy).is_err());
+
+        let (tenant_id, learner_id) = ids();
+        let affiliation = LearningAffiliation::new(
+            tenant_id,
+            learner_id,
+            AffiliationKind::Employee,
+            Some("worker-42".to_owned()),
+            DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp"),
+            None,
+        )
+        .expect("valid affiliation");
+        let encoded = serde_json::to_value(&affiliation).expect("serialize affiliation");
+        assert_eq!(
+            serde_json::from_value::<LearningAffiliation>(encoded)
+                .expect("deserialize affiliation"),
+            affiliation
+        );
+
+        let policy = CompletionPolicyRevision::new(
+            tenant_id,
+            Uuid::from_u128(3),
+            1,
+            BTreeSet::from([EvidenceKind::Activity]),
+        )
+        .expect("valid policy");
+        let encoded = serde_json::to_value(&policy).expect("serialize policy");
+        assert_eq!(
+            serde_json::from_value::<CompletionPolicyRevision>(encoded)
+                .expect("deserialize policy"),
+            policy
+        );
     }
 
     #[test]

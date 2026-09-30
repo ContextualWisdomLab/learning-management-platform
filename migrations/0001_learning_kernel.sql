@@ -88,7 +88,8 @@ CREATE TABLE decision_evidence_reference (
     CONSTRAINT decision_evidence_reference_membership_fk
         FOREIGN KEY (tenant_id, learner_id)
         REFERENCES tenant_membership (tenant_id, learner_id),
-    CONSTRAINT decision_evidence_reference_identity_unique UNIQUE (tenant_id, decision_evidence_reference_id)
+    CONSTRAINT decision_evidence_reference_identity_unique
+        UNIQUE (tenant_id, learner_id, decision_evidence_reference_id)
 );
 
 CREATE TABLE completion_decision (
@@ -107,22 +108,24 @@ CREATE TABLE completion_decision (
         FOREIGN KEY (tenant_id, completion_policy_revision_id)
         REFERENCES completion_policy_revision (tenant_id, completion_policy_revision_id),
     CONSTRAINT completion_decision_supersedes_fk
-        FOREIGN KEY (tenant_id, supersedes_decision_id)
-        REFERENCES completion_decision (tenant_id, completion_decision_id),
-    CONSTRAINT completion_decision_identity_unique UNIQUE (tenant_id, completion_decision_id)
+        FOREIGN KEY (tenant_id, learner_id, supersedes_decision_id)
+        REFERENCES completion_decision (tenant_id, learner_id, completion_decision_id),
+    CONSTRAINT completion_decision_identity_unique
+        UNIQUE (tenant_id, learner_id, completion_decision_id)
 );
 
 CREATE TABLE completion_decision_evidence (
     completion_decision_id uuid NOT NULL,
     decision_evidence_reference_id uuid NOT NULL,
     tenant_id uuid NOT NULL,
+    learner_id uuid NOT NULL,
     PRIMARY KEY (completion_decision_id, decision_evidence_reference_id),
     CONSTRAINT completion_decision_evidence_decision_fk
-        FOREIGN KEY (tenant_id, completion_decision_id)
-        REFERENCES completion_decision (tenant_id, completion_decision_id),
+        FOREIGN KEY (tenant_id, learner_id, completion_decision_id)
+        REFERENCES completion_decision (tenant_id, learner_id, completion_decision_id),
     CONSTRAINT completion_decision_evidence_reference_fk
-        FOREIGN KEY (tenant_id, decision_evidence_reference_id)
-        REFERENCES decision_evidence_reference (tenant_id, decision_evidence_reference_id)
+        FOREIGN KEY (tenant_id, learner_id, decision_evidence_reference_id)
+        REFERENCES decision_evidence_reference (tenant_id, learner_id, decision_evidence_reference_id)
 );
 
 ALTER TABLE learning_tenant ENABLE ROW LEVEL SECURITY;
