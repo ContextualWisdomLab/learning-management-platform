@@ -100,6 +100,8 @@ enum ConfigurationError {
         "the application database role must not be superuser, BYPASSRLS, a table owner, or a schema creator"
     )]
     UnsafeDatabaseRole,
+    #[error("plaintext HTTP may bind only to a loopback address")]
+    ExternalPlaintextBinding,
 }
 
 #[derive(Debug)]
@@ -656,12 +658,21 @@ async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
 }
 
+fn validate_bind_address(bind_address: SocketAddr) -> Result<SocketAddr, ConfigurationError> {
+    if bind_address.ip().is_loopback() {
+        Ok(bind_address)
+    } else {
+        Err(ConfigurationError::ExternalPlaintextBinding)
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let database_url = env::var("DATABASE_URL")?;
     let bind_address: SocketAddr = env::var("LMS_BIND_ADDRESS")
         .unwrap_or_else(|_| "127.0.0.1:8080".to_owned())
         .parse()?;
+    let bind_address = validate_bind_address(bind_address)?;
     let tenant_authorizer = TenantAuthorizer::from_environment()?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -741,6 +752,22 @@ mod tests {
             TenantAuthorizer::from_json(r#"{"not-a-tenant":"00"}"#),
             Err(ConfigurationError::InvalidTenantAuthorization)
         ));
+    }
+
+    #[test]
+    fn plaintext_listener_accepts_only_loopback_addresses() {
+        for address in ["127.0.0.1:8080", "[::1]:8080"] {
+            let address = address.parse().expect("valid socket address");
+            validate_bind_address(address).expect("loopback is allowed");
+        }
+
+        for address in ["0.0.0.0:8080", "[::]:8080", "192.0.2.1:8080"] {
+            let address = address.parse().expect("valid socket address");
+            assert!(matches!(
+                validate_bind_address(address),
+                Err(ConfigurationError::ExternalPlaintextBinding)
+            ));
+        }
     }
 
     #[test]

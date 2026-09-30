@@ -262,6 +262,8 @@ jobs:
             --tuples-only --no-align \
             --command "SET app.tenant_id = '$tenant_id'" \
             --command "SELECT count(*) FROM enrollment_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
+          PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
+            --file scripts/postgres_constraint_contracts.sql
           kill "$api_pid" 2>/dev/null || true
           wait "$api_pid" 2>/dev/null || true
           trap - EXIT
