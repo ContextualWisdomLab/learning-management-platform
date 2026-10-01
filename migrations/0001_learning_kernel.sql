@@ -41,7 +41,10 @@ CREATE TABLE learning_affiliation (
     valid_from timestamptz NOT NULL,
     valid_to timestamptz,
     validity_range tstzrange GENERATED ALWAYS AS (
-        tstzrange(valid_from, COALESCE(valid_to, 'infinity'::timestamptz), '[)')
+        CASE
+            WHEN valid_to IS NULL OR valid_to > valid_from
+                THEN tstzrange(valid_from, COALESCE(valid_to, 'infinity'::timestamptz), '[)')
+        END
     ) STORED,
     CONSTRAINT learning_affiliation_membership_fk
         FOREIGN KEY (tenant_id, learner_id)
