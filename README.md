@@ -29,7 +29,7 @@ See `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/product-technical-gap-ba
 
 ## Executable kernel
 
-The current implementation branch contains a Rust domain kernel, a PostgreSQL migration, and a small learner-registration/enrollment HTTP adapter. Run the domain checks with `cargo test --workspace --all-targets --locked`; apply `migrations/0001_learning_kernel.sql` with a dedicated migration role; then run the API with a separate `NOSUPERUSER NOBYPASSRLS` application role that owns no tables and cannot create in the application schema.
+The current implementation branch contains a Rust domain kernel, a PostgreSQL migration, and a small learner-affiliation/registration/enrollment HTTP adapter. Employee affiliations require an opaque Orgmetra worker reference; all nine non-employee kinds reject that field. Run the domain checks with `cargo test --workspace --all-targets --locked`; apply `migrations/0001_learning_kernel.sql` with a dedicated migration role; then run the API with a separate `NOSUPERUSER NOBYPASSRLS` application role that owns no tables and cannot create in the application schema.
 
 The adapter requires `LMS_TENANT_API_KEY_SHA256` as a non-empty JSON object that maps each authorized tenant UUID to the lowercase SHA-256 digest of its bootstrap bearer key. Every tenant-scoped write endpoint accepts `Authorization: Bearer <key>` only when that key is bound to the requested tenant. Because this bounded adapter serves plaintext HTTP, `LMS_BIND_ADDRESS` is restricted to loopback; external traffic requires a separately governed TLS-capable edge. This fail-closed bootstrap seam is not a Keyverse/OIDC conformance claim; the released Keyverse identity contract remains follow-up work.
 

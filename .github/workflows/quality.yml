@@ -112,7 +112,7 @@ jobs:
             --file migrations/0001_learning_kernel.sql
           PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --set ON_ERROR_STOP=1 \
-            --command "GRANT USAGE ON SCHEMA public TO lms_kernel; GRANT SELECT ON TABLE learning_tenant TO lms_kernel; GRANT SELECT, INSERT ON TABLE login_identity_reference, learner_profile, tenant_membership, course_offering, access_entitlement, enrollment_record, learning_registration TO lms_kernel"
+            --command "GRANT USAGE ON SCHEMA public TO lms_kernel; GRANT SELECT ON TABLE learning_tenant TO lms_kernel; GRANT SELECT, INSERT ON TABLE login_identity_reference, learner_profile, tenant_membership, learning_affiliation, course_offering, access_entitlement, enrollment_record, learning_registration TO lms_kernel"
           test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test --tuples-only --no-align --command "SELECT count(*) FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace JOIN pg_roles owner ON owner.oid = relation.relowner WHERE namespace.nspname = 'public' AND relation.relkind = 'r' AND relation.relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence', 'course_offering', 'access_entitlement', 'enrollment_record', 'learning_registration') AND owner.rolname = 'lms_migrator'")" = '14'
           test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test --tuples-only --no-align --command "SELECT has_schema_privilege('lms_kernel', 'public', 'CREATE')")" = 'f'
       - name: Install pinned Rust
@@ -203,6 +203,31 @@ jobs:
           fi
           grep -qi 'row-level security' "$RUNNER_TEMP/cross_tenant_insert.log"
 
+          affiliation_url="http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/affiliations"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' --data '{"affiliation_kind":"partner"}' \
+            "$affiliation_url")" = '401'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"affiliation_kind":"employee"}' "$affiliation_url")" = '400'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"affiliation_kind":"partner","orgmetra_worker_reference":"forbidden"}' \
+            "$affiliation_url")" = '400'
+          test "$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"affiliation_kind":"employee","orgmetra_worker_reference":"worker-ci-opaque"}' \
+            --output "$RUNNER_TEMP/employee_affiliation_response.json" --write-out '%{http_code}' \
+            "$affiliation_url")" = '201'
+          python3 -c 'import json, sys; response=json.load(open(sys.argv[1], encoding="utf-8")); assert response["orgmetra_worker_reference"] == "worker-ci-opaque"' "$RUNNER_TEMP/employee_affiliation_response.json"
+          test "$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"affiliation_kind":"partner"}' --output "$RUNNER_TEMP/partner_affiliation_response.json" \
+            --write-out '%{http_code}' "$affiliation_url")" = '201'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"affiliation_kind":"partner"}' "$affiliation_url")" = '409'
+
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
             --header 'content-type: application/json' \
             --data '{"offering_name":"Denied","content_release_reference":"content-release/v1/denied"}' \
@@ -284,7 +309,7 @@ jobs:
             --set ON_ERROR_STOP=1 --file migrations/0001_learning_kernel.sql
           PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --set ON_ERROR_STOP=1 \
-            --command "GRANT USAGE ON SCHEMA public TO lms_kernel; GRANT SELECT ON TABLE learning_tenant TO lms_kernel; GRANT SELECT, INSERT ON TABLE login_identity_reference, learner_profile, tenant_membership, course_offering, access_entitlement, enrollment_record, learning_registration TO lms_kernel"
+            --command "GRANT USAGE ON SCHEMA public TO lms_kernel; GRANT SELECT ON TABLE learning_tenant TO lms_kernel; GRANT SELECT, INSERT ON TABLE login_identity_reference, learner_profile, tenant_membership, learning_affiliation, course_offering, access_entitlement, enrollment_record, learning_registration TO lms_kernel"
 
           policy_count=$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --tuples-only --no-align \

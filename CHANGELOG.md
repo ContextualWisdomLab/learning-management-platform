@@ -16,6 +16,8 @@
 - Repository development rules.
 - Rust learner domain kernel, tenant-scoped PostgreSQL migration, and learner-registration API smoke path.
 - Bounded offering, external entitlement projection, enrollment, and learning registration API path on the stacked kernel branch.
+- Effective-dated learner affiliation API coverage with PostgreSQL exclusion-conflict mapping on the next stack.
+- Employee-only opaque Orgmetra worker-reference persistence and bearer-authorized affiliation API fixtures, with non-employee rejection at both API and database boundaries.
 - Added non-superuser/NOBYPASSRLS CI application-role verification, customer/self-sponsored multi-tenant affiliation coverage, and disposable migration rollback/reapply rehearsal.
 - Added fail-closed bearer-key-to-tenant authorization, separate migration/application database roles, non-owner application-role assertions, forced-RLS isolation tests, and a committed Rust 1.97.1 dependency lock.
 - Product-first README for buyers, maintainers, and integrators.
