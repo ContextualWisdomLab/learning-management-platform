@@ -209,13 +209,16 @@ jobs:
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/offerings")" = '401'
           nil_id='00000000-0000-0000-0000-000000000000'
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
-            --header 'content-type: application/json' --data '{}' \
+            --header 'content-type: application/json' \
+            --data '{"source_authority":"denied","external_entitlement_reference":"denied","source_digest":"sha256:denied","source_version":"v1"}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$nil_id/entitlements")" = '401'
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
-            --header 'content-type: application/json' --data '{}' \
+            --header 'content-type: application/json' \
+            --data "{\"course_offering_id\":\"$nil_id\",\"access_entitlement_id\":\"$nil_id\"}" \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$nil_id/enrollments")" = '401'
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
-            --header 'content-type: application/json' --data '{}' \
+            --header 'content-type: application/json' \
+            --data '{"external_registration_reference":"denied"}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$nil_id/enrollments/$nil_id/registrations")" = '401'
           curl --fail --silent --show-error --request POST \
             --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
