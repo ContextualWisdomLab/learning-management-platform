@@ -161,7 +161,9 @@ CREATE TABLE access_entitlement (
         CHECK (valid_to IS NULL OR valid_to > valid_from),
     CONSTRAINT access_entitlement_source_unique
         UNIQUE (tenant_id, source_authority, external_entitlement_reference),
-    CONSTRAINT access_entitlement_identity_unique UNIQUE (tenant_id, access_entitlement_id)
+    CONSTRAINT access_entitlement_identity_unique UNIQUE (tenant_id, access_entitlement_id),
+    CONSTRAINT access_entitlement_learner_identity_unique
+        UNIQUE (tenant_id, learner_id, access_entitlement_id)
 );
 
 CREATE TABLE enrollment_record (
@@ -180,11 +182,13 @@ CREATE TABLE enrollment_record (
         FOREIGN KEY (tenant_id, course_offering_id)
         REFERENCES course_offering (tenant_id, course_offering_id),
     CONSTRAINT enrollment_record_entitlement_fk
-        FOREIGN KEY (tenant_id, access_entitlement_id)
-        REFERENCES access_entitlement (tenant_id, access_entitlement_id),
+        FOREIGN KEY (tenant_id, learner_id, access_entitlement_id)
+        REFERENCES access_entitlement (tenant_id, learner_id, access_entitlement_id),
     CONSTRAINT enrollment_record_learner_offering_unique
         UNIQUE (tenant_id, learner_id, course_offering_id),
-    CONSTRAINT enrollment_record_identity_unique UNIQUE (tenant_id, enrollment_record_id)
+    CONSTRAINT enrollment_record_identity_unique UNIQUE (tenant_id, enrollment_record_id),
+    CONSTRAINT enrollment_record_learner_identity_unique
+        UNIQUE (tenant_id, learner_id, enrollment_record_id)
 );
 
 CREATE TABLE learning_registration (
@@ -200,17 +204,19 @@ CREATE TABLE learning_registration (
         FOREIGN KEY (tenant_id, learner_id)
         REFERENCES tenant_membership (tenant_id, learner_id),
     CONSTRAINT learning_registration_enrollment_fk
-        FOREIGN KEY (tenant_id, enrollment_record_id)
-        REFERENCES enrollment_record (tenant_id, enrollment_record_id),
+        FOREIGN KEY (tenant_id, learner_id, enrollment_record_id)
+        REFERENCES enrollment_record (tenant_id, learner_id, enrollment_record_id),
     CONSTRAINT learning_registration_external_reference_unique
         UNIQUE (tenant_id, external_registration_reference),
-    CONSTRAINT learning_registration_identity_unique UNIQUE (tenant_id, learning_registration_id)
+    CONSTRAINT learning_registration_identity_unique UNIQUE (tenant_id, learning_registration_id),
+    CONSTRAINT learning_registration_learner_identity_unique
+        UNIQUE (tenant_id, learner_id, learning_registration_id)
 );
 
 ALTER TABLE completion_decision
     ADD CONSTRAINT completion_decision_registration_fk
-    FOREIGN KEY (tenant_id, learning_registration_id)
-    REFERENCES learning_registration (tenant_id, learning_registration_id);
+    FOREIGN KEY (tenant_id, learner_id, learning_registration_id)
+    REFERENCES learning_registration (tenant_id, learner_id, learning_registration_id);
 
 ALTER TABLE learning_tenant ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_membership ENABLE ROW LEVEL SECURITY;

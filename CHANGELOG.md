@@ -27,4 +27,5 @@
 - Commit the Rust 1.97.1 dependency lock and stop resolving mutable dependency versions inside CI.
 - Restrict initial learner registration to `active` membership so a first registration cannot create an `ended` or `suspended` membership that has no transition path back to active.
 - Permit a closed enrollment registration to be followed by a new registration while rejecting replay of the same tenant-scoped external reference.
+- Enforce tenant-and-learner ownership across entitlement, enrollment, registration, and completion foreign keys.
 - Pin the PostgreSQL 18 Alpine CI service by immutable multi-architecture digest and stop piping local HTTP responses into an interpreter; store and parse bounded response files instead.
