@@ -258,10 +258,12 @@ jobs:
             --data '{"external_registration_reference":"registration-ci-2"}' \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments/$enrollment_id/registrations")" = '409'
           test "$(PGPASSWORD=ci-only psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --quiet \
             --tuples-only --no-align \
             --command "SET app.tenant_id = '$tenant_id'" \
             --command "SELECT count(*) FROM learning_registration WHERE tenant_id = '$tenant_id' AND enrollment_record_id = '$enrollment_id'")" = '2'
           test "$(PGPASSWORD=ci-only psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --quiet \
             --tuples-only --no-align \
             --command "SET app.tenant_id = '$tenant_id'" \
             --command "SELECT count(*) FROM enrollment_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
