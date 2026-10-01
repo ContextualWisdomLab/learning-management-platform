@@ -496,8 +496,8 @@ fn fingerprint(
     }
     for reference in evidence {
         hasher.update(reference.evidence_id.as_bytes());
-        let encoded_kind =
-            serde_json::to_string(&reference.evidence_kind).expect("enum serialization cannot fail");
+        let encoded_kind = serde_json::to_string(&reference.evidence_kind)
+            .expect("enum serialization cannot fail");
         update_length_prefixed(&mut hasher, encoded_kind.as_bytes());
         update_length_prefixed(
             &mut hasher,
@@ -738,8 +738,7 @@ mod tests {
             BTreeSet::from([EvidenceKind::Activity]),
         )
         .expect("valid policy");
-        let evaluated_at =
-            DateTime::from_timestamp(1_700_000_002, 0).expect("fixed timestamp");
+        let evaluated_at = DateTime::from_timestamp(1_700_000_002, 0).expect("fixed timestamp");
 
         let first = evaluate_completion(
             tenant_id,
