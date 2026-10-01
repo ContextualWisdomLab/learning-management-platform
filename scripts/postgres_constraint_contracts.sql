@@ -69,19 +69,73 @@ INSERT INTO decision_evidence_reference
 VALUES
     ('00000000-0000-0000-0000-000000000501', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000301', 'activity', 'learning_record_store', 'snapshot-a', 'digest-a', 'v1', '2026-01-01T00:00:00Z');
 
-INSERT INTO completion_decision
-    (completion_decision_id, tenant_id, learner_id, completion_policy_revision_id, replay_fingerprint, evaluated_at)
+INSERT INTO course_offering
+    (course_offering_id, tenant_id, offering_name, content_release_reference)
 VALUES
-    ('00000000-0000-0000-0000-000000000601', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000301', '00000000-0000-0000-0000-000000000402', 'fingerprint-a', '2026-01-01T00:00:00Z'),
-    ('00000000-0000-0000-0000-000000000602', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000402', 'fingerprint-b', '2026-01-01T00:00:00Z');
+    ('00000000-0000-0000-0000-000000000701', '00000000-0000-0000-0000-000000000101', 'constraint-offering-a', 'content-release/constraint-a'),
+    ('00000000-0000-0000-0000-000000000702', '00000000-0000-0000-0000-000000000101', 'constraint-offering-b', 'content-release/constraint-b');
+
+INSERT INTO access_entitlement
+    (access_entitlement_id, tenant_id, learner_id, source_authority, external_entitlement_reference, source_digest, source_version, valid_from)
+VALUES
+    ('00000000-0000-0000-0000-000000000711', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000301', 'constraint-authority', 'entitlement-a', 'digest-a', 'v1', '2026-01-01T00:00:00Z'),
+    ('00000000-0000-0000-0000-000000000712', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000302', 'constraint-authority', 'entitlement-b', 'digest-b', 'v1', '2026-01-01T00:00:00Z');
+
+INSERT INTO enrollment_record
+    (enrollment_record_id, tenant_id, learner_id, course_offering_id, access_entitlement_id)
+VALUES
+    ('00000000-0000-0000-0000-000000000721', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000301', '00000000-0000-0000-0000-000000000701', '00000000-0000-0000-0000-000000000711'),
+    ('00000000-0000-0000-0000-000000000722', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000701', '00000000-0000-0000-0000-000000000712');
+
+INSERT INTO learning_registration
+    (learning_registration_id, tenant_id, learner_id, enrollment_record_id, external_registration_reference)
+VALUES
+    ('00000000-0000-0000-0000-000000000731', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000301', '00000000-0000-0000-0000-000000000721', 'constraint-registration-a'),
+    ('00000000-0000-0000-0000-000000000732', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000722', 'constraint-registration-b');
+
+INSERT INTO completion_decision
+    (completion_decision_id, tenant_id, learner_id, learning_registration_id, completion_policy_revision_id, replay_fingerprint, evaluated_at)
+VALUES
+    ('00000000-0000-0000-0000-000000000601', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000301', '00000000-0000-0000-0000-000000000731', '00000000-0000-0000-0000-000000000402', 'fingerprint-a', '2026-01-01T00:00:00Z'),
+    ('00000000-0000-0000-0000-000000000602', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000732', '00000000-0000-0000-0000-000000000402', 'fingerprint-b', '2026-01-01T00:00:00Z');
 
 DO $contract$
 BEGIN
     BEGIN
-        INSERT INTO completion_decision
-            (tenant_id, learner_id, completion_policy_revision_id, replay_fingerprint, evaluated_at, supersedes_decision_id)
+        INSERT INTO enrollment_record
+            (tenant_id, learner_id, course_offering_id, access_entitlement_id)
         VALUES
-            ('00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000402', 'fingerprint-c', '2026-01-02T00:00:00Z', '00000000-0000-0000-0000-000000000601');
+            ('00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000702', '00000000-0000-0000-0000-000000000711');
+        RAISE EXCEPTION 'cross-learner entitlement enrollment was accepted';
+    EXCEPTION
+        WHEN foreign_key_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO learning_registration
+            (tenant_id, learner_id, enrollment_record_id, external_registration_reference)
+        VALUES
+            ('00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000721', 'cross-learner-registration');
+        RAISE EXCEPTION 'cross-learner enrollment registration was accepted';
+    EXCEPTION
+        WHEN foreign_key_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO completion_decision
+            (tenant_id, learner_id, learning_registration_id, completion_policy_revision_id, replay_fingerprint, evaluated_at)
+        VALUES
+            ('00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000731', '00000000-0000-0000-0000-000000000402', 'cross-learner-registration', '2026-01-02T00:00:00Z');
+        RAISE EXCEPTION 'cross-learner registration decision was accepted';
+    EXCEPTION
+        WHEN foreign_key_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO completion_decision
+            (tenant_id, learner_id, learning_registration_id, completion_policy_revision_id, replay_fingerprint, evaluated_at, supersedes_decision_id)
+        VALUES
+            ('00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000732', '00000000-0000-0000-0000-000000000402', 'fingerprint-c', '2026-01-02T00:00:00Z', '00000000-0000-0000-0000-000000000601');
         RAISE EXCEPTION 'cross-learner superseding decision was accepted';
     EXCEPTION
         WHEN foreign_key_violation THEN NULL;
