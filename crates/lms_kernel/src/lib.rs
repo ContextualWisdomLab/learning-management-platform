@@ -762,6 +762,26 @@ mod tests {
     }
 
     #[test]
+    fn completion_rejects_blank_deserialized_evidence_metadata() {
+        let (tenant_id, learner_id) = ids();
+        let mut untrusted = evidence(tenant_id, learner_id, EvidenceKind::Activity);
+        untrusted.source_metadata.source_digest = "   ".to_owned();
+        let policy = CompletionPolicyRevision::new(
+            tenant_id,
+            Uuid::from_u128(3),
+            1,
+            BTreeSet::from([EvidenceKind::Activity]),
+        )
+        .expect("valid policy");
+        let evaluated_at = DateTime::from_timestamp(1_700_000_002, 0).expect("fixed timestamp");
+
+        assert_eq!(
+            evaluate_completion(tenant_id, learner_id, policy, &[untrusted], evaluated_at),
+            Err(KernelError::MissingEvidenceMetadata)
+        );
+    }
+
+    #[test]
     fn deserialization_cannot_bypass_affiliation_and_policy_validation() {
         let invalid_affiliation = serde_json::json!({
             "tenant_id": Uuid::from_u128(1),
