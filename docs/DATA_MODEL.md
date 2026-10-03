@@ -5,6 +5,7 @@ The authoritative database uses third normal form and two-or-more-word `snake_ca
 Initial entities:
 
 - `learning_tenant`
+- `login_identity_reference`
 - `learner_profile`
 - `learning_affiliation`
 - `tenant_membership`
@@ -25,7 +26,9 @@ Initial entities:
 - `completion_decision`
 - `credential_record`
 
-A learner is not assumed to be an employee, login account, payer, or contracting organization. Optional employment linkage is represented as an effective-dated `learning_affiliation` or external worker reference with `valid_from` and `valid_to`; no employee row is synthesized for a non-employee learner.
+A learner is not assumed to be an employee, login account, payer, or contracting organization. The Rust domain kernel requires an opaque Orgmetra worker reference only when `affiliation_kind` is `employee` and rejects that reference for all non-employee kinds. The current PostgreSQL migration represents effective-dated `learning_affiliation` rows with `valid_from` and `valid_to` but does not yet persist the worker reference; that schema/API projection remains a dependent change. No employee row is synthesized for a non-employee learner.
+
+`login_identity_reference` is a global opaque reference to an identity authority and external subject. `learner_profile` links one such identity to a stable learner, while `tenant_membership` grants tenant-scoped participation. This permits one identity to have memberships in several tenants without copying credentials or treating a login identity as an employee.
 
 ## Completion policy and decision relationships
 
@@ -33,7 +36,7 @@ A learner is not assumed to be an employee, login account, payer, or contracting
 
 `decision_evidence_reference` stores only the external source authority, opaque snapshot/reference ID, immutable digest, observed source version, and an allowlisted `decision_time_metadata` object. That object is scalar-only and may contain only `decision_reason_code`, `decision_method`, `evaluated_at`, `policy_revision_reference`, and, for a correction, `correction_reason_code`; it may not contain evidence claims, credentials, LRS statements, psychometric responses, billing payloads, raw PII, or authoritative source payloads. It does **not** duplicate LRS statements, Psychometrics Commons result payloads, Studio content, or Billing provider truth.
 
-`completion_decision` references exactly one `learning_registration` through a tenant-scoped foreign key, exactly one `completion_policy_revision`, and one or more `decision_evidence_reference` rows through tenant-scoped foreign keys. The tenant-scoped `completion_policy_revision` foreign key is the authoritative policy revision for replay and audit. If `decision_time_metadata.policy_revision_reference` is present on an attached evidence reference, it is a non-authoritative audit mirror and MUST resolve to exactly that same policy revision; absence is allowed, but mismatch is rejected fail-closed and must never select or override policy authority. A learning registration may have multiple decisions. A decision is immutable after publication; correction creates a superseding decision with an explicit relation to the prior decision.
+`completion_decision` references exactly one `learning_registration` through a tenant-scoped foreign key, exactly one `completion_policy_revision`, and one or more `decision_evidence_reference` rows through tenant-and-learner-scoped foreign keys. A superseding decision is likewise constrained to the same tenant and learner. The tenant-scoped `completion_policy_revision` foreign key is the authoritative policy revision for replay and audit. If `decision_time_metadata.policy_revision_reference` is present on an attached evidence reference, it is a non-authoritative audit mirror and MUST resolve to exactly that same policy revision; absence is allowed, but mismatch is rejected fail-closed and must never select or override policy authority. A learning registration may have multiple decisions. A decision is immutable after publication; correction creates a superseding decision with an explicit relation to the prior decision.
 
 Cardinality baseline:
 
@@ -52,3 +55,5 @@ course_offering 1 ---- * enrollment_record
 `access_entitlement` is a versioned local reference/projection of an entitlement owned by the Billing Control Plane or another authorized entitlement authority. It stores the external entitlement reference, source authority, effective interval, observed version/digest, and projection status. It does not store provider payment objects or become the authoritative commercial permission record.
 
 All authoritative facts are normalized to 3NF; repeated names, provider payloads, and external-system facts are referenced through dedicated identifiers rather than embedded denormalized copies.
+
+The executable schema is `migrations/0001_learning_kernel.sql`. It applies composite tenant foreign keys, effective-dated affiliation exclusion, and PostgreSQL row-level security policies. The migration intentionally does not store source payloads from Keyverse, the LRS, Psychometrics Commons, Learning Content Studio, or Billing Control Plane.

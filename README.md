@@ -4,7 +4,7 @@
 
 **A standards-oriented learning platform for employees and external learners without forcing learning identity into an HR record.**
 
-Learning Management Platform is designed for employee, customer, partner, certification-candidate, association-member, and self-sponsored learning. It owns the learning journey—offerings, learner affiliations, enrollment, registrations, completion policy, and versioned completion decisions—while preserving the authority of the systems that own identity, content, observed activity, psychometric evidence, employment, and billing.
+Learning Management Platform is designed for employee, customer, partner, certification-candidate, association-member, and self-sponsored learning. It owns the learning journey—offerings, learner affiliations, enrollment, registrations, completion policy, and versioned completion decisions—while preserving the authority of the systems that own identity, content, observed activity, psychometric evidence, employment, and billing. Employment linkage is optional: employee affiliations require an opaque Orgmetra worker reference, while every non-employee affiliation rejects one.
 
 The first buyer-facing vertical is a **Partner & Customer Academy**: onboard an external learner, establish entitlement, enroll them, launch standards-based learning, consume activity and assessment evidence, publish a reproducible completion decision, and hand off a portable credential reference without inventing an employee record.
 
@@ -24,6 +24,16 @@ This product treats those roles as separate first-class concepts and keeps high-
 | Ecosystem composition | Explicit ownership boundaries; no cross-repository application-table reads |
 
 ## Product boundary
+
+See `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/product-technical-gap-baseline.md`, and `docs/doctoring/STANDARD_TRACEABILITY.md`.
+
+## Executable kernel
+
+The current implementation branch contains a Rust domain kernel, a PostgreSQL migration, and a small learner-registration HTTP adapter. Run the domain checks with `cargo test --workspace --all-targets --locked`; apply `migrations/0001_learning_kernel.sql` with a dedicated migration role; then run the API with a separate `NOSUPERUSER NOBYPASSRLS` application role that owns no tables and cannot create in the application schema.
+
+The adapter requires `LMS_TENANT_API_KEY_SHA256` as a non-empty JSON object that maps each authorized tenant UUID to the lowercase SHA-256 digest of its bootstrap bearer key. `POST /v1/tenants/{tenant_id}/learners` accepts `Authorization: Bearer <key>` only when that key is bound to the requested tenant. Because this bounded adapter serves plaintext HTTP, `LMS_BIND_ADDRESS` is restricted to loopback; external traffic requires a separately governed TLS-capable edge. This fail-closed bootstrap seam is not a Keyverse/OIDC conformance claim; the released Keyverse identity contract remains follow-up work.
+
+The API exposes `GET /healthz` and accepts opaque identity references at the learner-registration endpoint. CI proves unauthenticated rejection, token-to-tenant authorization, a cross-tenant RLS write rejection, a non-owner application role, eight forced-RLS policies, and disposable migration rollback/reapply under the separate migration role. External identity, content, evidence, assessment, and billing adapters remain separate follow-up contracts.
 
 The platform owns:
 
@@ -80,7 +90,7 @@ A completion decision references exactly one registration, exactly one authorita
 
 ## Current state
 
-This repository is currently an **architecture and documentation foundation**, not an executable LMS release. The active foundation PR defines the domain, 3NF data-model target, ownership boundaries, standards operating profile, repository governance, and first commercial journey. It does not claim a running API, PostgreSQL schema, browser workflow, production deployment, standards conformance, customer deployment, or released artifact.
+Protected `develop` is still an **architecture and documentation foundation**. This candidate branch adds an executable Rust kernel, PostgreSQL schema, and bounded registration adapter, but it is not an integrated LMS release and does not claim a browser workflow, production deployment, standards conformance, customer deployment, or released artifact.
 
 Protected `develop` remains shipped repository authority. Open PR behavior is candidate truth until it integrates through current review and exact-head checks.
 
@@ -88,9 +98,9 @@ The current prioritized implementation gaps are maintained in [`docs/product-tec
 
 ## Repository validation
 
-The repository-owned quality workflow validates the documentation/bootstrap contract against the exact PR head. There is no runtime install or application quickstart yet because no executable product has been claimed.
+The repository-owned quality workflow validates both the documentation/bootstrap contract and the Rust/PostgreSQL kernel against the exact PR head. The kernel checks use the pinned Rust toolchain and dependency lock; the database path uses separate migration and `NOSUPERUSER NOBYPASSRLS` application roles.
 
-The check context is `validate` in [`.github/workflows/quality.yml`](.github/workflows/quality.yml). Promotion decisions must use the exact current head and the live repository/organization governance; predecessor checks and stale approvals do not transfer after a push.
+The repository-owned contexts are `validate` and `rust-kernel` in [`.github/workflows/quality.yml`](.github/workflows/quality.yml). Promotion decisions must use the exact current head and live repository/organization governance; predecessor checks and stale approvals do not transfer after a push.
 
 ## Architecture and data model
 
@@ -130,4 +140,4 @@ Changes to public/product contracts should update the corresponding architecture
 
 ## License
 
-Learning Management Platform is licensed under the [Apache License 2.0](LICENSE). The current repository contains documentation/configuration only; future source, dependencies, generated assets, and imported components must retain their own obligations and remain compatible with the organization's commercial-use policy.
+Learning Management Platform is licensed under the [Apache License 2.0](LICENSE). Repository-authored documentation and Rust source use that grant; dependencies, generated assets, and imported components retain their own obligations and must remain compatible with the organization's commercial-use policy.

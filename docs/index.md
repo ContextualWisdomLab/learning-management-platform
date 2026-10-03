@@ -8,7 +8,7 @@ Learning Management Platform is a standards-oriented learning system for employe
 
 ## Start here
 
-The current repository is a product and architecture foundation rather than a claimed production LMS deployment. Start with the [README](https://github.com/ContextualWisdomLab/learning-management-platform#readme) for the buyer-facing product boundary, first end-to-end journey, ecosystem ownership model, and repository verification guidance.
+Protected `develop` is the product and architecture foundation. This candidate stack also contains a bounded Rust learner kernel, PostgreSQL schema, and registration adapter; it is not yet a released production LMS deployment. Start with the [README](https://github.com/ContextualWisdomLab/learning-management-platform#readme) for the buyer-facing product boundary, first end-to-end journey, ecosystem ownership model, and repository verification guidance.
 
 ## Product responsibility
 
@@ -29,6 +29,6 @@ Identity, employment, authored content releases, observed learning activity, psy
 
 ## Evidence boundary
 
-Protected `develop` remains repository authority. Architecture scope does not establish a running API, database implementation, browser journey, standards conformance, production deployment, customer deployment, or released artifact unless current protected-branch and live operational evidence independently proves it.
+Protected `develop` remains repository authority. Candidate-branch implementation does not establish a released API, deployed database, browser journey, standards conformance, production deployment, customer deployment, or released artifact unless current protected-branch and live operational evidence independently proves it.
 
 This file is a public documentation landing source. GitHub Pages publication is a separate repository-facing state and must be verified live before it is claimed available.

@@ -1,5 +1,6 @@
 # Product and technical gap baseline
 
+**As of:** 2026-09-30
 **Status:** Code-current planning baseline. This document is not a product-readiness, release, deployment, certification, customer, or standards-conformance claim.
 
 ## Evidence authority
@@ -10,9 +11,19 @@ Historical bootstrap facts may remain pinned when they are explicitly historical
 
 ## Executive verdict
 
-The repository is still a documentation and architecture foundation, not yet a usable learning-management product. The buyer-facing opportunity is clear: let an employee, partner, customer, candidate, association member, or self-sponsored learner complete learning without manufacturing an HR record, while keeping identity, content, activity evidence, assessment responses/results, and billing truth in their owning systems.
+Protected `develop` is still a documentation and architecture foundation. The current candidate stack adds a bounded learner-registration kernel and tenant-safe persistence, but it is not yet a usable learning-management product. The buyer-facing opportunity is clear: let an employee, partner, customer, candidate, association member, or self-sponsored learner complete learning without manufacturing an HR record, while keeping identity, content, activity evidence, assessment responses/results, and billing truth in their owning systems.
 
 The next customer-visible milestone is executable: a tenant-isolated learner can be entitled, enrolled, launched, progress-tracked, assessed when required, and issued a reproducible completion result without requiring an Orgmetra worker reference.
+
+## Current-state evidence
+
+| Evidence | Observed fact | Consequence |
+|---|---|---|
+| `develop@1b89a16bbbd6c4b7c6ee4e8b81e2c8c651d1ce2c` | Contains only the bootstrap `README.md`. | No runtime behavior exists on the base branch. |
+| PR [#1](https://github.com/ContextualWisdomLab/learning-management-platform/pull/1) | Adds governance, architecture, data-model, ADR, standards, exact-head quality validation, explicit evidence-metadata allowlisting, and registration-to-decision cardinality. | The bootstrap is candidate evidence and must not be described as integrated behavior before protected merge. |
+| PR [#4](https://github.com/ContextualWisdomLab/learning-management-platform/pull/4), canonical owner branch `feat/external-learner-kernel` | Adds the tenant-safe Rust kernel, PostgreSQL migration, registration adapter, employee-only Orgmetra worker-reference invariant, all nine non-employee variants, and a Rust 1.97.1 dependency lock. | It remains candidate evidence until current exact-head checks, review, and protected integration succeed. |
+| Issue [#2](https://github.com/ContextualWisdomLab/learning-management-platform/issues/2) | Defines the repository boundary, modular-monolith slices, PostgreSQL 3NF, adapters, accessibility, and evidence gates. | This is the foundation backlog, not delivered functionality. |
+| Issue [#3](https://github.com/ContextualWisdomLab/learning-management-platform/issues/3) | Defines the external-learner vertical and acceptance criteria for identity separation, effective dating, replayable completion, tenancy, and coverage. | This is the first product slice to implement after the bootstrap merges. |
 
 ## Product requirements baseline
 
@@ -91,30 +102,57 @@ Production readiness requires evidence for CSAP/SOC 2-oriented controls, SBOM/pr
 
 ## Gap register and delivery order
 
-| ID | Priority | Buyer-visible gap | Current evidence | Exit evidence |
-|---|---:|---|---|---|
-| G-01 | P0 | No executable LMS kernel/API | documentation/architecture candidate only | running service with health and tenant context |
-| G-02 | P0 | No executable learner/identity/employee/sponsor/payer separation | data-model contract only | PostgreSQL schema + integration tests for each role |
-| G-03 | P0 | No external learner enrollment path | product journey only | non-employee browser/API E2E |
-| G-04 | P0 | No implemented time-aware affiliation/correction model | requirements only | valid-time + replay/correction tests |
-| G-05 | P0 | No released versioned external contracts | planned identifiers only | schemas, clients, contract tests, idempotent adapters |
-| G-06 | P0 | No deterministic completion/evidence engine | decision contract prose only | replay from exact policy/evidence versions |
-| G-07 | P1 | No provenance/audit runtime evidence | no runtime source | correlation-linked audit/decision history + export |
-| G-08 | P1 | No PostgreSQL 3NF/RLS/migration/hot-partition implementation | model design only | migration, RLS, load, retention, rollback evidence |
-| G-09 | P1 | No security/compliance implementation | standards/control baseline only | tested controls, SBOM, provenance |
-| G-10 | P1 | No accessibility/UI/design-system surface | no frontend | Storybook, token, browser interaction, i18n evidence |
-| G-11 | P1 | No runtime coverage/E2E evidence | documentation validation only | 100% owned statement/branch + edge/E2E evidence |
-| G-12 | P1 | No explicit public source license on protected branch | licensing decision may exist only on active PR until merge | protected root LICENSE + README/package metadata as applicable |
-| G-13 | P2 | No release/rollback ecosystem evidence | no released artifact | versioned release, changelog, provenance, rollback evidence |
+| ID | Priority | Buyer-visible gap | Current evidence | Exit evidence | Next change |
+|---|---:|---|---|---|---|
+| G-01 | P0 | No merged executable LMS kernel or API | PR #4 adds the Rust kernel, health endpoint, and learner registration smoke path | Running service with documented health and tenant context on a merged exact head | Merge foundation stack after independent review and current checks |
+| G-02 | P0 | No complete learner/identity/employee/sponsor/payer separation | PR #4 kernel and migration separate learner, login identity, tenant membership, and affiliation; the kernel requires an employee worker reference and rejects it for all nine non-employee kinds, while sponsor/payer and affiliation mutation APIs remain open | Real PostgreSQL integration tests and APIs for all roles | Carry the invariant through the dependent affiliation and entitlement API stack |
+| G-03 | P0 | No external learner enrollment path | Issue #3 only | Non-employee journey passes browser/API E2E | Implement catalog, entitlement projection, enrollment, registration |
+| G-04 | P0 | No time-aware affiliation or correction model | Requirements only | Effective-dated and replay/correction tests pass | Add valid-time and decision transaction metadata |
+| G-05 | P0 | No versioned external contracts | PR #1 lists planned identifiers only | Schemas, clients, contract tests, idempotent adapters | Add integration package and outbox |
+| G-06 | P0 | No integrated completion/evidence publication | PR #4 adds a bounded evaluator whose replay fingerprint covers ordered policy and evidence metadata, plus normalized policy, revision, decision, and evidence-reference storage; no publication API or transaction connects them | Persisted replay produces the same decision from exact policy/evidence versions | Add the completion publication adapter and replay fixture |
+| G-07 | P1 | No provenance, audit, or operational evidence | No runtime source | Correlation-linked audit and decision history with export | Add audit/provenance module |
+| G-08 | P1 | No production PostgreSQL operability evidence | PR #4 adds 3NF relations, forced RLS, a non-superuser CI application role, tenant-and-learner decision/evidence foreign keys, valid-time constraint fixtures, and disposable rollback/reapply evidence | Load, retention, recovery, and governed production rollback evidence | Add measured load, retention, and governed production rollback evidence |
+| G-09 | P1 | No security/compliance control implementation | Standards profile only | CSAP/SOC 2/NIST control map with test receipts, SBOM, provenance | Add security and operability gates |
+| G-10 | P1 | No accessibility/UI/design-system surface | No frontend files | Storybook, token tests, browser interaction and i18n evidence | Start UI only after API journey is real |
+| G-11 | P1 | No realistic tests or coverage | PR #4 covers employee, partner, customer, self-sponsored, multi-tenant, duplicate-request, and domain-boundary cases; full enrollment journey coverage remains open | 100% owned statement/branch coverage plus edge and E2E evidence | Extend coverage with enrollment and external-learner journey slices |
+| G-12 | P1 | No explicit public source license on protected branch | Apache-2.0 grant is candidate-only until the foundation integrates | Protected root LICENSE plus accurate source/dependency notices | Integrate the foundation through ordinary protection |
+| G-13 | P2 | No release, rollback, or cross-repository ecosystem loop | Open stacked PRs; no released artifact | Versioned release, changelog, provenance, rollback evidence | Merge the repaired stack, then release a bounded vertical |
 
 ## PR and issue integration loop
 
 For every open PR: re-fetch the exact current head, inspect reviews/threads and exact-head checks, correct valid repository-owned failures, and merge only through live protected governance. Do not persist a mutable current head SHA in this file as if it were durable product evidence. A predecessor check is historical after a push; a green check is not semantic approval; a merge is not runtime proof.
 
-After the documentation/bootstrap PR integrates, the executable modular-monolith foundation and the external-learner vertical are the next bounded product slices. New runtime evidence should update this gap register rather than accumulate self-staling PR status prose.
+The current loop is:
+
+1. PR #1: integrate the documentation/bootstrap foundation only after its live exact head satisfies review and Checks.
+2. PR #4: keep the employee-only Orgmetra reference invariant in the canonical learner-kernel owner and integrate the current foundation delta without rewriting history.
+3. Dependent enrollment and affiliation PRs: carry the invariant through PostgreSQL and API contracts without copying owner code or retiring valid deltas.
+4. Issue #3: prove the external-learner vertical on the repaired stack.
+
+New runtime evidence updates this gap register rather than accumulating self-staling PR status prose.
 
 ## Standards and research evidence
 
 The standards profile remains planned adoption. Exact revisions, official sources, and evidence status are maintained in [`docs/doctoring/STANDARD_TRACEABILITY.md`](doctoring/STANDARD_TRACEABILITY.md). The profile includes the repository-selected LTI/LTI Advantage, QTI, CASE, Open Badges, CLR, xAPI/IEEE, and learning-management quality/security references, but documentation alone is not conformance.
 
 Learning-analytics research reinforces the product boundary: activity data are proxy signals and can create surveillance, aggregation, secondary-use, exclusion, distortion, and decisional-interference risks. Progress projections therefore remain evidence inputs and cannot silently become high-impact completion or employment decisions without an explicit versioned policy and auditable governance.
+
+## References
+
+1EdTech Consortium. (n.d.). *Competencies and Academic Standards Exchange (CASE).* Retrieved August 20, 2026, from https://www.1edtech.org/standards/case
+
+1EdTech Consortium. (n.d.). *Comprehensive Learner Record standard.* Retrieved August 20, 2026, from https://www.1edtech.org/standards/clr
+
+1EdTech Consortium. (n.d.). *Learning Tools Interoperability (LTI).* Retrieved August 20, 2026, from https://www.1edtech.org/standards/lti
+
+1EdTech Consortium. (n.d.). *Open Badges.* Retrieved August 20, 2026, from https://www.1edtech.org/standards/open-badges
+
+1EdTech Consortium. (n.d.). *Question & Test Interoperability (QTI).* Retrieved August 20, 2026, from https://www.1edtech.org/standards/qti
+
+Badiuzzaman, M. B., & Rahman, S. S. (2026). Beyond compliance: A Solove-informed analysis of tracking, profiling, and student privacy in learning management systems. *Frontiers in Education, 11*. https://doi.org/10.3389/feduc.2026.1871384
+
+IEEE Standards Association. (2023). *IEEE Standard for learning technology—JavaScript Object Notation (JSON) data model format and Representational State Transfer (RESTful) web service for learner experience data tracking and access (IEEE Std 9274.1.1-2023).* https://standards.ieee.org/ieee/9274.1.1/7321/
+
+National Institute of Standards and Technology. (2024). *The NIST Cybersecurity Framework (CSF) 2.0* (NIST CSWP 29). https://doi.org/10.6028/NIST.CSWP.29
+
+PostgreSQL Global Development Group. (2026). *PostgreSQL 18 documentation: Row security policies; table partitioning.* https://www.postgresql.org/docs/current/ddl-rowsecurity.html; https://www.postgresql.org/docs/current/ddl-partitioning.html

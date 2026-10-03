@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/lms_kernel"]
+resolver = "3"
