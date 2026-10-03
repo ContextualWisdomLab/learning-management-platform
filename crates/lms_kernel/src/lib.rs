@@ -437,6 +437,18 @@ pub fn evaluate_completion(
         if reference.tenant_id != tenant_id || reference.learner_id != learner_id {
             return Err(KernelError::BoundaryMismatch);
         }
+        let metadata = &reference.source_metadata;
+        if [
+            &metadata.source_authority,
+            &metadata.source_snapshot_reference,
+            &metadata.source_digest,
+            &metadata.source_version,
+        ]
+        .iter()
+        .any(|value| value.trim().is_empty())
+        {
+            return Err(KernelError::MissingEvidenceMetadata);
+        }
         if !seen_ids.insert(reference.evidence_id) {
             return Err(KernelError::DuplicateEvidence);
         }
