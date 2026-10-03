@@ -15,8 +15,9 @@
 - Product and technical gap baseline with the first buyer journey, modular target, delivery order, and evidence-authority rules.
 - Repository development rules.
 - Rust learner domain kernel, tenant-scoped PostgreSQL migration, and learner-registration API smoke path.
+- Bounded offering, external entitlement projection, enrollment, and learning registration API path on the stacked kernel branch.
 - Added non-superuser/NOBYPASSRLS CI application-role verification, customer/self-sponsored multi-tenant affiliation coverage, and disposable migration rollback/reapply rehearsal.
-- Added fail-closed bearer-key-to-tenant authorization, separate migration/application database roles, non-owner application-role assertions, forced-RLS isolation tests, and exact-head dependency-lock regeneration evidence.
+- Added fail-closed bearer-key-to-tenant authorization, separate migration/application database roles, non-owner application-role assertions, forced-RLS isolation tests, and a committed Rust 1.97.1 dependency lock.
 - Product-first README for buyers, maintainers, and integrators.
 - Apache License 2.0 source grant for the repository foundation.
 
@@ -25,3 +26,6 @@
 - Validate affiliation and policy deserialization, bind plaintext HTTP to loopback only, hash replay-relevant evidence metadata, and enforce tenant-and-learner decision/evidence foreign keys with real PostgreSQL constraint fixtures.
 - Commit the Rust 1.97.1 dependency lock and stop resolving mutable dependency versions inside CI.
 - Restrict initial learner registration to `active` membership so a first registration cannot create an `ended` or `suspended` membership that has no transition path back to active.
+- Permit a closed enrollment registration to be followed by a new registration while rejecting replay of the same tenant-scoped external reference.
+- Enforce tenant-and-learner ownership across entitlement, enrollment, registration, and completion foreign keys.
+- Pin the PostgreSQL 18 Alpine CI service by immutable multi-architecture digest and stop piping local HTTP responses into an interpreter; store and parse bounded response files instead.

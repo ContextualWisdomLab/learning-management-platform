@@ -54,6 +54,12 @@ jobs:
                   if marker in text:
                       raise SystemExit(f"unresolved bootstrap marker {marker!r} in {path}")
 
+          workflow = Path(".github/workflows/quality.yml").read_text(encoding="utf-8")
+          if "|" + " python3" in workflow:
+              raise SystemExit("workflow must not execute curl responses through an interpreter")
+          if "postgres:18-alpine@sha256:" not in workflow:
+              raise SystemExit("PostgreSQL CI service image must be pinned by digest")
+
           print("learning management bootstrap contract validation passed")
 
   rust-kernel:
@@ -61,7 +67,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_DB: lms_kernel_test
           POSTGRES_USER: postgres
@@ -106,8 +112,8 @@ jobs:
             --file migrations/0001_learning_kernel.sql
           PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --set ON_ERROR_STOP=1 \
-            --command "GRANT USAGE ON SCHEMA public TO lms_kernel; GRANT SELECT ON TABLE learning_tenant TO lms_kernel; GRANT SELECT, INSERT ON TABLE login_identity_reference, learner_profile, tenant_membership TO lms_kernel"
-          test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test --tuples-only --no-align --command "SELECT count(*) FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace JOIN pg_roles owner ON owner.oid = relation.relowner WHERE namespace.nspname = 'public' AND relation.relkind = 'r' AND relation.relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence') AND owner.rolname = 'lms_migrator'")" = '10'
+            --command "GRANT USAGE ON SCHEMA public TO lms_kernel; GRANT SELECT ON TABLE learning_tenant TO lms_kernel; GRANT SELECT, INSERT ON TABLE login_identity_reference, learner_profile, tenant_membership, course_offering, access_entitlement, enrollment_record, learning_registration TO lms_kernel"
+          test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test --tuples-only --no-align --command "SELECT count(*) FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace JOIN pg_roles owner ON owner.oid = relation.relowner WHERE namespace.nspname = 'public' AND relation.relkind = 'r' AND relation.relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence', 'course_offering', 'access_entitlement', 'enrollment_record', 'learning_registration') AND owner.rolname = 'lms_migrator'")" = '14'
           test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test --tuples-only --no-align --command "SELECT has_schema_privilege('lms_kernel', 'public', 'CREATE')")" = 'f'
       - name: Install pinned Rust
         run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
@@ -123,7 +129,7 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo +1.97.1 doc --workspace --no-deps --locked
-      - name: Verify authorization, RLS, and rollback-reapply contracts
+      - name: Verify authorized enrollment, RLS, and rollback-reapply contracts
         env:
           DATABASE_URL: postgres://lms_kernel:ci-only@127.0.0.1:5432/lms_kernel_test
           LMS_BIND_ADDRESS: 127.0.0.1:8080
@@ -164,7 +170,9 @@ jobs:
             test "$attempt" -lt 60
             sleep 1
           done
-
+          test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM pg_constraint WHERE conname = 'completion_decision_registration_fk'")" = '1'
           payload='{"identity_authority":"keyverse","external_subject_reference":"ci-subject","membership_status":"active"}'
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
             --header 'content-type: application/json' --data "$payload" \
@@ -180,7 +188,6 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
             --header 'content-type: application/json' --header "authorization: Bearer $api_key" --data "$payload" \
             "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners")" = '409'
-
           learner_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["learner_id"])' "$RUNNER_TEMP/lms_api_response.json")
           visible_tenant_count=$(PGPASSWORD=ci-only psql --quiet --tuples-only --no-align \
             --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
@@ -196,9 +203,72 @@ jobs:
           fi
           grep -qi 'row-level security' "$RUNNER_TEMP/cross_tenant_insert.log"
 
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' \
+            --data '{"offering_name":"Denied","content_release_reference":"content-release/v1/denied"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/offerings")" = '401'
+          nil_id='00000000-0000-0000-0000-000000000000'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' \
+            --data '{"source_authority":"denied","external_entitlement_reference":"denied","source_digest":"sha256:denied","source_version":"v1"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$nil_id/entitlements")" = '401'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' \
+            --data "{\"course_offering_id\":\"$nil_id\",\"access_entitlement_id\":\"$nil_id\"}" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$nil_id/enrollments")" = '401'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' \
+            --data '{"external_registration_reference":"denied"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$nil_id/enrollments/$nil_id/registrations")" = '401'
+          curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"offering_name":"Partner Academy Basics","content_release_reference":"content-release/v1/partner-basics"}' \
+            --output "$RUNNER_TEMP/offering_response.json" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/offerings"
+          offering_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["course_offering_id"])' "$RUNNER_TEMP/offering_response.json")
+          curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"source_authority":"billing-control-plane","external_entitlement_reference":"entitlement-ci-1","source_digest":"sha256:ci","source_version":"v1"}' \
+            --output "$RUNNER_TEMP/entitlement_response.json" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/entitlements"
+          entitlement_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["access_entitlement_id"])' "$RUNNER_TEMP/entitlement_response.json")
+          curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data "{\"course_offering_id\":\"$offering_id\",\"access_entitlement_id\":\"$entitlement_id\"}" \
+            --output "$RUNNER_TEMP/enrollment_response.json" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments"
+          enrollment_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["enrollment_record_id"])' "$RUNNER_TEMP/enrollment_response.json")
+          curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"external_registration_reference":"registration-ci-1"}' \
+            --output "$RUNNER_TEMP/registration_response.json" \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments/$enrollment_id/registrations"
+          registration_id=$(python3 -c 'import json, sys; response=json.load(open(sys.argv[1], encoding="utf-8")); assert response["registration_status"] == "registered"; print(response["learning_registration_id"])' "$RUNNER_TEMP/registration_response.json")
+          PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
+            --set ON_ERROR_STOP=1 \
+            --command "BEGIN; SET LOCAL app.tenant_id = '$tenant_id'; UPDATE learning_registration SET registration_status = 'closed' WHERE tenant_id = '$tenant_id' AND learning_registration_id = '$registration_id'; COMMIT;"
+          test "$(curl --fail --silent --show-error --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"external_registration_reference":"registration-ci-2"}' \
+            --output "$RUNNER_TEMP/reregistration_response.json" --write-out '%{http_code}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments/$enrollment_id/registrations")" = '201'
+          python3 -c 'import json, sys; assert json.load(open(sys.argv[1], encoding="utf-8"))["registration_status"] == "registered"' "$RUNNER_TEMP/reregistration_response.json"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'content-type: application/json' --header "authorization: Bearer $api_key" \
+            --data '{"external_registration_reference":"registration-ci-2"}' \
+            "http://127.0.0.1:8080/v1/tenants/$tenant_id/learners/$learner_id/enrollments/$enrollment_id/registrations")" = '409'
+          test "$(PGPASSWORD=ci-only psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --quiet \
+            --tuples-only --no-align \
+            --command "SET app.tenant_id = '$tenant_id'" \
+            --command "SELECT count(*) FROM learning_registration WHERE tenant_id = '$tenant_id' AND enrollment_record_id = '$enrollment_id'")" = '2'
+          test "$(PGPASSWORD=ci-only psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \
+            --quiet \
+            --tuples-only --no-align \
+            --command "SET app.tenant_id = '$tenant_id'" \
+            --command "SELECT count(*) FROM enrollment_record WHERE tenant_id = '$tenant_id' AND learner_id = '$learner_id'")" = '1'
           PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --file scripts/postgres_constraint_contracts.sql
-
           kill "$api_pid" 2>/dev/null || true
           wait "$api_pid" 2>/dev/null || true
           trap - EXIT
@@ -207,14 +277,14 @@ jobs:
             --set ON_ERROR_STOP=1 --file scripts/postgres_rollback_rehearsal.sql
           table_count=$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --tuples-only --no-align \
-            --command "SELECT count(*) FROM pg_class WHERE relkind = 'r' AND relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence')")
+            --command "SELECT count(*) FROM pg_class WHERE relkind = 'r' AND relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence', 'course_offering', 'access_entitlement', 'enrollment_record', 'learning_registration')")
           test "$table_count" = '0'
 
           PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --set ON_ERROR_STOP=1 --file migrations/0001_learning_kernel.sql
           PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --set ON_ERROR_STOP=1 \
-            --command "GRANT USAGE ON SCHEMA public TO lms_kernel; GRANT SELECT ON TABLE learning_tenant TO lms_kernel; GRANT SELECT, INSERT ON TABLE login_identity_reference, learner_profile, tenant_membership TO lms_kernel"
+            --command "GRANT USAGE ON SCHEMA public TO lms_kernel; GRANT SELECT ON TABLE learning_tenant TO lms_kernel; GRANT SELECT, INSERT ON TABLE login_identity_reference, learner_profile, tenant_membership, course_offering, access_entitlement, enrollment_record, learning_registration TO lms_kernel"
 
           policy_count=$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --tuples-only --no-align \
@@ -224,10 +294,10 @@ jobs:
             --command "SELECT count(*) FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace WHERE namespace.nspname = 'public' AND relation.relrowsecurity AND relation.relforcerowsecurity")
           owner_count=$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test \
             --tuples-only --no-align \
-            --command "SELECT count(*) FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace JOIN pg_roles owner ON owner.oid = relation.relowner WHERE namespace.nspname = 'public' AND relation.relkind = 'r' AND relation.relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence') AND owner.rolname = 'lms_migrator'")
-          test "$policy_count" = '8'
-          test "$forced_rls_count" = '8'
-          test "$owner_count" = '10'
+            --command "SELECT count(*) FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace JOIN pg_roles owner ON owner.oid = relation.relowner WHERE namespace.nspname = 'public' AND relation.relkind = 'r' AND relation.relname IN ('learning_tenant', 'login_identity_reference', 'learner_profile', 'tenant_membership', 'learning_affiliation', 'completion_policy', 'completion_policy_revision', 'decision_evidence_reference', 'completion_decision', 'completion_decision_evidence', 'course_offering', 'access_entitlement', 'enrollment_record', 'learning_registration') AND owner.rolname = 'lms_migrator'")
+          test "$policy_count" = '12'
+          test "$forced_rls_count" = '12'
+          test "$owner_count" = '14'
           test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test --tuples-only --no-align --command "SELECT has_schema_privilege('lms_kernel', 'public', 'CREATE')")" = 'f'
           test "$(PGPASSWORD=migration-only psql --host 127.0.0.1 --username lms_migrator --dbname lms_kernel_test --tuples-only --no-align --command "SELECT has_table_privilege('lms_kernel', 'learning_tenant', 'SELECT') AND NOT has_table_privilege('lms_kernel', 'learning_tenant', 'DELETE')")" = 't'
           if PGPASSWORD=ci-only psql --host 127.0.0.1 --username lms_kernel --dbname lms_kernel_test \

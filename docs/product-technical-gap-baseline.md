@@ -11,7 +11,7 @@ Historical bootstrap facts may remain pinned when they are explicitly historical
 
 ## Executive verdict
 
-Protected `develop` is still a documentation and architecture foundation. The current candidate stack adds a bounded learner-registration kernel and tenant-safe persistence, but it is not yet a usable learning-management product. The buyer-facing opportunity is clear: let an employee, partner, customer, candidate, association member, or self-sponsored learner complete learning without manufacturing an HR record, while keeping identity, content, activity evidence, assessment responses/results, and billing truth in their owning systems.
+Protected `develop` is still a documentation and architecture foundation. The current candidate stack adds an executable Rust/PostgreSQL registration-to-enrollment kernel and tenant-safe persistence, but it is not yet a usable learning-management product. The buyer-facing opportunity is clear: let an employee, partner, customer, candidate, association member, or self-sponsored learner complete learning without manufacturing an HR record, while keeping identity, content, activity evidence, assessment responses/results, and billing truth in their owning systems. No released integration client, versioned API contract, browser journey, progress projection, or production test suite exists yet, so the first commercial slice remains the external-learner registration-to-completion vertical proven with real PostgreSQL and end-to-end tests.
 
 The next customer-visible milestone is executable: a tenant-isolated learner can be entitled, enrolled, launched, progress-tracked, assessed when required, and issued a reproducible completion result without requiring an Orgmetra worker reference.
 
@@ -21,7 +21,8 @@ The next customer-visible milestone is executable: a tenant-isolated learner can
 |---|---|---|
 | `develop@1b89a16bbbd6c4b7c6ee4e8b81e2c8c651d1ce2c` | Contains only the bootstrap `README.md`. | No runtime behavior exists on the base branch. |
 | PR [#1](https://github.com/ContextualWisdomLab/learning-management-platform/pull/1) | Adds governance, architecture, data-model, ADR, standards, exact-head quality validation, explicit evidence-metadata allowlisting, and registration-to-decision cardinality. | The bootstrap is candidate evidence and must not be described as integrated behavior before protected merge. |
-| PR [#4](https://github.com/ContextualWisdomLab/learning-management-platform/pull/4), canonical owner branch `feat/external-learner-kernel` | Adds the tenant-safe Rust kernel, PostgreSQL migration, registration adapter, employee-only Orgmetra worker-reference invariant, all nine non-employee variants, and a Rust 1.97.1 dependency lock. | It remains candidate evidence until current exact-head checks, review, and protected integration succeed. |
+| PR [#4](https://github.com/ContextualWisdomLab/learning-management-platform/pull/4), canonical owner branch `feat/external-learner-kernel` | Adds the tenant-safe Rust kernel, PostgreSQL migration, registration adapter, employee-only Orgmetra worker-reference invariant, all nine non-employee variants, dependency lock, guarded deserialization, loopback-only plaintext binding, replay-complete evidence hashing, and tenant-and-learner completion constraints. | It remains candidate evidence until current exact-head checks, review, and protected integration succeed. |
+| PR [#5](https://github.com/ContextualWisdomLab/learning-management-platform/pull/5) | Adds the bearer-authorized offering→entitlement→enrollment→registration adapter, tenant-scoped RLS, closed-registration retry invariant, and real PostgreSQL/API smoke path on top of PR #4. | This is an open Draft implementation PR, not merged product evidence; current exact-head checks and independent review still gate it. |
 | Issue [#2](https://github.com/ContextualWisdomLab/learning-management-platform/issues/2) | Defines the repository boundary, modular-monolith slices, PostgreSQL 3NF, adapters, accessibility, and evidence gates. | This is the foundation backlog, not delivered functionality. |
 | Issue [#3](https://github.com/ContextualWisdomLab/learning-management-platform/issues/3) | Defines the external-learner vertical and acceptance criteria for identity separation, effective dating, replayable completion, tenancy, and coverage. | This is the first product slice to implement after the bootstrap merges. |
 
@@ -76,6 +77,7 @@ The first implementation should remain one deployable service with explicit modu
 ### Data and time invariants
 
 - Every tenant-owned table has a tenant key, and every cross-tenant foreign key includes the tenant boundary.
+- Every learner-owned enrollment link includes both tenant and learner identity; entitlement, enrollment, registration, completion, and evidence rows cannot be joined across learners inside one tenant.
 - Authoritative facts use third-normal-form relations with descriptive two-or-more-word `snake_case` names.
 - Effective-dated relationships use `valid_from` and `valid_to`; correctable observed facts also retain transaction/observation metadata and a superseding relation.
 - Completion policies are immutable revisions. `completion_decision.completion_policy_revision` is the authoritative revision identity for replay/audit.
@@ -104,14 +106,14 @@ Production readiness requires evidence for CSAP/SOC 2-oriented controls, SBOM/pr
 
 | ID | Priority | Buyer-visible gap | Current evidence | Exit evidence | Next change |
 |---|---:|---|---|---|---|
-| G-01 | P0 | No merged executable LMS kernel or API | PR #4 adds the Rust kernel, health endpoint, and learner registration smoke path | Running service with documented health and tenant context on a merged exact head | Merge foundation stack after independent review and current checks |
-| G-02 | P0 | No complete learner/identity/employee/sponsor/payer separation | PR #4 kernel and migration separate learner, login identity, tenant membership, and affiliation; the kernel requires an employee worker reference and rejects it for all nine non-employee kinds, while sponsor/payer and affiliation mutation APIs remain open | Real PostgreSQL integration tests and APIs for all roles | Carry the invariant through the dependent affiliation and entitlement API stack |
-| G-03 | P0 | No external learner enrollment path | Issue #3 only | Non-employee journey passes browser/API E2E | Implement catalog, entitlement projection, enrollment, registration |
+| G-01 | P0 | No merged executable LMS kernel or API | PR #4 adds the Rust kernel and learner registration; PR #5 extends the bounded enrollment API | Running service with documented health and tenant context on a merged exact head | Merge foundation stack after independent review and current checks |
+| G-02 | P0 | No merged learner/identity/employee/sponsor/payer separation | PR #4 kernel requires an employee worker reference and rejects it for all nine non-employee kinds; PR #5 adds offering and entitlement separation, while the affiliation PostgreSQL/API projection remains open | Real PostgreSQL schema and integration tests for all roles | Carry the kernel invariant through the dependent affiliation schema/API stack |
+| G-03 | P0 | No completed external learner journey | PR #5 implements bearer-authorized offering, entitlement projection, enrollment, and registration | Non-employee journey passes browser/API E2E through completion | Add launch, progress, assessment, completion, and credential slices |
 | G-04 | P0 | No time-aware affiliation or correction model | Requirements only | Effective-dated and replay/correction tests pass | Add valid-time and decision transaction metadata |
 | G-05 | P0 | No versioned external contracts | PR #1 lists planned identifiers only | Schemas, clients, contract tests, idempotent adapters | Add integration package and outbox |
 | G-06 | P0 | No integrated completion/evidence publication | PR #4 adds a bounded evaluator whose replay fingerprint covers ordered policy and evidence metadata, plus normalized policy, revision, decision, and evidence-reference storage; no publication API or transaction connects them | Persisted replay produces the same decision from exact policy/evidence versions | Add the completion publication adapter and replay fixture |
 | G-07 | P1 | No provenance, audit, or operational evidence | No runtime source | Correlation-linked audit and decision history with export | Add audit/provenance module |
-| G-08 | P1 | No production PostgreSQL operability evidence | PR #4 adds 3NF relations, forced RLS, a non-superuser CI application role, tenant-and-learner decision/evidence foreign keys, valid-time constraint fixtures, and disposable rollback/reapply evidence | Load, retention, recovery, and governed production rollback evidence | Add measured load, retention, and governed production rollback evidence |
+| G-08 | P1 | No production PostgreSQL operability evidence | PR #4 adds 3NF relations, forced RLS, a non-superuser CI application role, tenant-and-learner decision/evidence foreign keys, valid-time constraint fixtures, and disposable rollback/reapply evidence; PR #5 extends tenant-and-learner foreign keys across entitlement, enrollment, registration, and completion candidate rows | Load, retention, recovery, and governed production rollback evidence | Add measured load, retention, and governed production rollback evidence |
 | G-09 | P1 | No security/compliance control implementation | Standards profile only | CSAP/SOC 2/NIST control map with test receipts, SBOM, provenance | Add security and operability gates |
 | G-10 | P1 | No accessibility/UI/design-system surface | No frontend files | Storybook, token tests, browser interaction and i18n evidence | Start UI only after API journey is real |
 | G-11 | P1 | No realistic tests or coverage | PR #4 covers employee, partner, customer, self-sponsored, multi-tenant, duplicate-request, and domain-boundary cases; full enrollment journey coverage remains open | 100% owned statement/branch coverage plus edge and E2E evidence | Extend coverage with enrollment and external-learner journey slices |
@@ -124,10 +126,11 @@ For every open PR: re-fetch the exact current head, inspect reviews/threads and 
 
 The current loop is:
 
-1. PR #1: integrate the documentation/bootstrap foundation only after its live exact head satisfies review and Checks.
-2. PR #4: keep the employee-only Orgmetra reference invariant in the canonical learner-kernel owner and integrate the current foundation delta without rewriting history.
-3. Dependent enrollment and affiliation PRs: carry the invariant through PostgreSQL and API contracts without copying owner code or retiring valid deltas.
-4. Issue #3: prove the external-learner vertical on the repaired stack.
+1. PR #1: keep the bootstrap Draft until its exact head is reviewed and its current checks pass.
+2. PR #4: verify the repaired canonical learner-kernel owner at its current exact head and integrate only after required review and checks.
+3. PR #5: non-force restack onto PR #4, then verify the bearer-authorized enrollment path, PostgreSQL evidence, and exact-head checks.
+4. Dependent affiliation PRs: carry the invariant through PostgreSQL and API contracts without copying owner code or retiring valid deltas.
+5. Issue #3: prove the remaining external-learner journey on the repaired stack.
 
 New runtime evidence updates this gap register rather than accumulating self-staling PR status prose.
 
